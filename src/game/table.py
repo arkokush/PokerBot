@@ -24,64 +24,77 @@ class Game:
         self.pot += self.players[(self.dealer_index + 1) % self.num_players].bet(self.BIGBLIND_BET//2)
         self.pot += self.players[(self.dealer_index + 2) % self.num_players].bet(self.BIGBLIND_BET)
 
-        min_raise = self.BIGBLIND_BET
+        min_raise = self.bettingRound(self.dealer_index + 3, self.BIGBLIND_BET)
 
-def bettingRound(self, starting_index, min_raise):
-    i = starting_index % self.num_players
-    cur_bet = self.current_bet
-    players_folded = 0
-    players_acted_since_raise = 0
+        first_bet_index = (self.dealer_index + 1) % self.num_players
+        while self.players[first_bet_index].folded:
+            first_bet_index = (first_bet_index + 1) % self.num_players
 
-    while True:
-        players_left = self.num_players - players_folded
+        flop = self.deck.deal(3)
+        self.community_cards.extend(flop)
+        min_raise = self.bettingRound(first_bet_index, min_raise)
 
-        if i == self.num_players:
-            i = 0
+        turn = self.deck.deal(1)
+        self.community_cards.extend(turn)
+        min_raise = self.bettingRound(first_bet_index, min_raise)
 
-        if players_left == 1:
-            break
+        river = self.deck.deal(1)
+        self.community_cards.extend(river)
+        self.bettingRound(first_bet_index, min_raise)
 
-        if players_acted_since_raise >= players_left:
-            break
 
-        player = self.players[i]
 
-        if player.folded or player.all_in:
+    def bettingRound(self, starting_index, min_raise):
+        i = starting_index % self.num_players
+        cur_bet = self.current_bet
+        players_acted = 0
+
+        active_players = sum(1 for p in self.players if not p.folded)
+
+        while active_players > 1 and players_acted < active_players:
+            i = i % self.num_players
+            player = self.players[i]
+
+            if player.folded or player.all_in:
+                i += 1
+                continue
+
+            call_amnt = cur_bet - player.current_bet
+
+            player_state = {
+                "hand": player.hand,
+                "current_bet": player.current_bet,
+                "community_cards": self.community_cards,
+                "call_amnt": call_amnt,
+                "min_raise": min_raise,
+                "players_left": active_players,
+            }
+
+            decision = player.make_decision(player_state)
+
+            if decision == "Fold":
+                player.fold()
+                active_players -= 1
+                players_acted += 1
+
+            elif decision == "Check" or decision == "Call":
+                self.pot += player.bet(call_amnt)
+                players_acted += 1
+
+            elif "Raise" in decision:
+                amount = int(decision.split()[1])
+                if amount < min_raise:
+                    amount = min_raise  # Enforce minimum raise
+
+                total_bet = call_amnt + amount
+                self.pot += player.bet(total_bet)
+                cur_bet = player.current_bet
+                min_raise = amount
+                players_acted = 1  # Reset, but raiser has already acted
+                active_players = sum(1 for p in self.players if not p.folded)
+
             i += 1
-            continue
 
-        call_amnt = cur_bet - player.current_bet
-
-        player_state = {
-            "hand": player.hand,
-            "current_bet": player.current_bet,
-            "community_cards": self.community_cards,
-            "call_amnt": call_amnt,
-            "min_raise": min_raise,
-            "players left": players_left,
-        }
-
-        decision = player.make_decision(player_state)
-
-        if decision == "Fold":
-            player.fold()
-            players_folded += 1
-            players_acted_since_raise += 1
-
-        elif decision == "Check" or decision == "Call":
-            self.pot += player.bet(call_amnt)
-            players_acted_since_raise += 1
-
-        elif "Raise" in decision:
-            amount = int(decision.split()[1])
-            total_bet = call_amnt + amount
-            self.pot += player.bet(total_bet)
-            cur_bet = player.current_bet
-            min_raise = amount
-            players_acted_since_raise = 1
-
-        i += 1
-
-    self.current_bet = cur_bet
-    return min_raise
+        self.current_bet = cur_bet
+        return min_raise
 
