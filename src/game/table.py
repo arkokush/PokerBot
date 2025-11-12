@@ -16,6 +16,7 @@ class Game:
         self.dealer_index = (self.dealer_index + 1) % self.num_players
         self.deck.shuffle()
         self.current_bet = self.BIGBLIND_BET
+        self.pot = 0
 
         for player in self.players:
             player.reset_for_new_round()
