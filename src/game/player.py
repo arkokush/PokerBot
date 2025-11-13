@@ -1,8 +1,36 @@
 class Agent:
+    #player_state = {
+    #    "hand": player.hand,
+    #    "current_bet": player.current_bet,
+    #    "player_stack": player.stack,
+    #    "community_cards": self.community_cards,
+    #    "call_amnt": call_amnt,
+    #    "min_raise": min_raise,
+    #    "players_left": active_players,
+    #}
+
     class Agent:
-        def decide(self, state, legal_actions):
+        def decide(self, state):
             """Returns {"action": str, "amount": optional int}"""
             raise NotImplementedError("Subclasses must implement decide()")
+
+    class RandomAgent(Agent):
+        def decide(self, state):
+            import random
+
+            if state["call_amnt"] == 0:
+                return "Check"
+
+            legal_actions = ["Fold"]
+
+            if state["call_amnt"] <= state["player_stack"]:
+                legal_actions.append("Call")
+
+            if state["min_raise"] < state["player_stack"]:
+                raise_amount = random.randint(state["min_raise"], state["player_stack"] - state["min_raise"])
+                legal_actions.append("Raise " + raise_amount)
+
+            return random.choice(legal_actions)
 
 class Player:
     def __init__(self, buy_in: int, agent: Agent, name: str = ""):
@@ -40,6 +68,19 @@ class Player:
         self.folded = False
         self.all_in = False
         self.hand = []
+
+    def decide(self, state):
+        #player_state = {
+        #    "hand": player.hand,
+        #    "current_bet": player.current_bet,
+        #    "player_stack": player.stack,
+        #    "community_cards": self.community_cards,
+        #    "call_amnt": call_amnt,
+        #    "min_raise": min_raise,
+        #    "players_left": active_players,
+        #}
+
+        return self.agent.decide(state)
 
     def __repr__(self):
         return f"{self.name} (stack={self.stack}, bet={self.current_bet}, folded={self.folded})"

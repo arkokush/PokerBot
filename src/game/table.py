@@ -65,13 +65,14 @@ class Game:
             player_state = {
                 "hand": player.hand,
                 "current_bet": player.current_bet,
+                "player_stack": player.stack,
                 "community_cards": self.community_cards,
                 "call_amnt": call_amnt,
                 "min_raise": min_raise,
                 "players_left": active_players,
             }
 
-            decision = player.make_decision(player_state)
+            decision = player.decide(player_state)
 
             if decision == "Fold":
                 player.fold()
@@ -84,8 +85,11 @@ class Game:
 
             elif "Raise" in decision:
                 amount = int(decision.split()[1])
-                if amount < min_raise:
-                    amount = min_raise  # Enforce minimum raise
+
+                if amount < min_raise and player.stack < min_raise:
+                    amount = player.stack
+                elif amount < min_raise:
+                    amount = min_raise
 
                 total_bet = call_amnt + amount
                 self.pot += player.bet(total_bet)
