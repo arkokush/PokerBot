@@ -1,4 +1,5 @@
 from cards import Deck
+from phevaluator.evaluator import evaluate_cards
 
 class Game:
     def __init__(self, players, BIGBLIND_BET):
