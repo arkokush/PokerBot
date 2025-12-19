@@ -44,6 +44,10 @@ class Game:
         self.community_cards.extend(river)
         self.bettingRound(first_bet_index, min_raise)
 
+        self.getWinner(self.community_cards,self.players,self.pot)
+
+
+
 
 
     def bettingRound(self, starting_index, min_raise):
@@ -93,6 +97,10 @@ class Game:
                     amount = min_raise
 
                 total_bet = call_amnt + amount
+
+                if player.stack == 0:
+                    player.all_in = True
+
                 self.pot += player.bet(total_bet)
                 cur_bet = player.current_bet
                 min_raise = amount
@@ -103,4 +111,34 @@ class Game:
 
         self.current_bet = cur_bet
         return min_raise
+
+    def getWinner(self,community_cards,players,pot):
+        win_index = []
+        win_rank = 7463
+
+        for i in range(len(players)):
+
+            if players[i].folded:
+                continue
+
+            rank = evaluate_cards(
+                str(players[i].hand[0]),
+                str(players[i].hand[1]),
+                *[str(card) for card in community_cards]
+            )
+
+
+            if rank > win_rank:
+                continue
+
+            elif rank < win_rank:
+                win_rank = rank
+                win_index = [i]
+
+            elif rank == win_rank:
+                win_index.append(i)
+
+        for i in win_index:
+            players[i].stack += pot / len(win_index)
+
 

@@ -12,7 +12,7 @@ suit_map = {
 
 # Reverse maps
 rank_reverse_map = {value: key for key, value in rank_map.items()}
-suit_reverse_map = {v: k.upper() for k, v in suit_map.items() if k.isupper()}
+suit_reverse_map = {v: k.lower() for k, v in suit_map.items() if k.isupper()}
 
 
 class Card:
