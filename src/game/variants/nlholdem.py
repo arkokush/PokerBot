@@ -13,10 +13,10 @@ class NLHoldemGame(Game):
         self.BIGBLIND_BET = big_blind
         self.community_cards = []
         self.current_bet = 0
-        self.deck = Deck()
         self.dealer_index = 0
 
     def startRound(self):
+        deck = Deck()
         self.community_cards = []
         self.dealer_index = (self.dealer_index + 1) % self.num_players
         self.deck.shuffle()

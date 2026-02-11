@@ -69,8 +69,11 @@ class Card:
 
 
 class Deck:
-    def __init__(self):
-        self.cards = [Card(i) for i in range(52)]
+    def __init__(self, cards = None):
+        if cards is None:
+            self.cards = [Card(i) for i in range(52)]
+        else:
+            self.cards = cards
 
     def shuffle(self):
         random.shuffle(self.cards)
