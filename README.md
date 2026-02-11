@@ -19,8 +19,11 @@ The architecture separates game logic, player behavior, and card management into
 - ✅ Player state management (stack, bets, folding, all-in)
 - ✅ Betting round logic with proper raise rules
 - ✅ Blind posting system
-- 🚧 Full game flow (in progress)
-- 🚧 Hand evaluation (planned)
+- ✅ Full game flow (No Limit Texas Hold'em)
+- ✅ Hand evaluation using phevaluator
+- ✅ Extensible game variant architecture
+- ✅ RandomAgent implementation
+- 🚧 Kuhn Poker variant (structure created, to be implemented)
 
 ### Planned (Phase 2 - Bot Intelligence)
 - 🎯 Rule-based decision-making system
@@ -226,7 +229,7 @@ Feel free to fork this project and implement your own poker strategies! The agen
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details
+[Add your license here]
 
 ## Author
 
