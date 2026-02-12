@@ -6,7 +6,7 @@ class KuhnPokerGame(Game):
     Kuhn Poker implementation.
 
     Kuhn Poker is a simplified poker game with:
-    - 3 cards: King, Queen, Jack
+    - 3 cards: Ace, King, Queen
     - 2 players
     - Each player gets 1 card
     - 1 betting round
@@ -40,7 +40,7 @@ class KuhnPokerGame(Game):
             5. Determine winner
             """
 
-            deck = Deck(cards=[Card("Kh"), Card("Qh"), Card("Jh")])
+            deck = Deck(cards=[Card("Ah"), Card("Kh"), Card("Qh")])
             self.pot = 2
             self.player1.bet(1)
             self.player2.bet(1)
@@ -121,7 +121,7 @@ class KuhnPokerGame(Game):
             return 1
 
         else:
-            rank_values = {'K': 2, 'Q': 1, 'J': 0}
+            rank_values = {'A': 2, 'K': 1, 'Q': 0}
             player1_rank = self.player1.hand[0].getRank()
             player2_rank = self.player2.hand[0].getRank()
 

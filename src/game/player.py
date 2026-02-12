@@ -1,5 +1,5 @@
 class Agent:
-    #player_state = {
+    #NLHE player_state = {
     #    "hand": player.hand,
     #    "current_bet": player.current_bet,
     #    "player_stack": player.stack,
