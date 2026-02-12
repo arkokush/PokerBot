@@ -55,7 +55,7 @@ class Player:
             self.all_in = True
         return amount
 
-    def buyIn(self, amount: int):
+    def buy_in(self, amount: int):
         self.stack += amount
         return self.stack
 

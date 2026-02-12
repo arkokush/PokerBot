@@ -38,9 +38,9 @@ The architecture separates game logic, player behavior, and card management into
 - **Python 3.9+** (recommended: Python 3.9 or 3.10)
 
 ### Dependencies
-This project uses only Python standard library:
+This project uses the Python standard library plus one external package:
 - `random` - for deck shuffling
-- No external dependencies required!
+- `phevaluator` - for Texas Hold'em hand evaluation
 
 ## Installation
 
@@ -57,7 +57,12 @@ This project uses only Python standard library:
    # .venv\Scripts\activate  # On Windows
    ```
 
-3. **Verify Python version**
+3. **Install dependencies**
+    ```bash
+    pip install phevaluator
+    ```
+
+4. **Verify Python version**
    ```bash
    python --version  # Should show Python 3.9 or higher
    ```
@@ -102,8 +107,8 @@ Defines player behavior and AI agent interface.
 
 **Classes:**
 - `Agent`: Abstract base class for AI decision-making
-  - Subclass this to create your own poker bots
-  - Implement `decide(state, legal_actions)` method
+    - Subclass this to create your own poker bots
+    - Implement `decide(state)` method
 - `Player`: Represents a player with stack, hand, and betting logic
 
 **Creating a Custom Bot:**
@@ -113,7 +118,7 @@ from game.player import Agent, Player
 class MyBot(Agent):
     def decide(self, state, legal_actions):
         # Your strategy here
-        return {"action": "Call", "amount": 0}
+        return "Call"
 
 player = Player(buy_in=1000, agent=MyBot(), name="Bot1")
 ```
@@ -162,11 +167,11 @@ from game.table import Game
 
 # Create custom agent (Phase 2 - not yet implemented)
 class SimpleBot(Agent):
-    def decide(self, state, legal_actions):
+    def decide(self, state):
         # Placeholder - bot logic will be developed in Phase 2
         if state["call_amnt"] == 0:
-            return {"action": "Check"}
-        return {"action": "Call"}
+            return "Check"
+        return "Call"
 
 # Set up players
 players = [
@@ -223,9 +228,8 @@ Feel free to fork this project and implement your own poker strategies! The agen
 
 ## Known Issues
 
-- Hand evaluation not yet implemented
 - Need to handle edge cases for all-in side pots
-- Player decision interface needs standardization (currently uses string parsing)
+- Player decision interface uses string parsing ("Fold", "Call", "Raise X")
 
 ## License
 

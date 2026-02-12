@@ -152,6 +152,11 @@ state = {
     "opponent_bet": 0 or 1,
     "legal_actions": ["Check", "Bet"] or ["Fold", "Call"]
 }
+
+## NL Hold'em Notes
+
+- Uses `phevaluator` for 7-card hand evaluation at showdown.
+- Bets reset each street (pre-flop → flop → turn → river) with the minimum raise reset to the big blind.
 ```
 
 ## Benefits of This Architecture
