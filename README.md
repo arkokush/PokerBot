@@ -14,23 +14,30 @@ The architecture separates game logic, player behavior, and card management into
 
 ## Features
 
-### Currently Implemented (Phase 1 - Game Engine)
+### Currently Implemented ✅
+- ✅ **No Limit Texas Hold'em** - Complete game implementation
+- ✅ **Kuhn Poker** - Simplified poker variant for CFR training
 - ✅ Deck management with shuffling and dealing
 - ✅ Player state management (stack, bets, folding, all-in)
 - ✅ Betting round logic with proper raise rules
 - ✅ Blind posting system
-- ✅ Full game flow (No Limit Texas Hold'em)
 - ✅ Hand evaluation using phevaluator
 - ✅ Extensible game variant architecture
 - ✅ RandomAgent implementation
-- 🚧 Kuhn Poker variant (structure created, to be implemented)
+- ✅ Modular project structure for CFR training
 
-### Planned (Phase 2 - Bot Intelligence)
-- 🎯 Rule-based decision-making system
+### In Development 🚧
+- 🚧 **CFR Algorithm** - For training optimal poker strategies
+- 🚧 **Leduc Poker** - Additional training variant
+- 🚧 **Strategy Evaluation** - Tools for testing trained agents
+
+### Planned (Phase 2 - Bot Intelligence) 🎯
+- 🎯 Advanced rule-based decision-making
 - 🎯 Hand strength evaluation
 - 🎯 Position-aware strategy
 - 🎯 Opponent modeling
 - 🎯 Pot odds calculation
+- 🎯 Monte Carlo CFR implementation
 
 ## Requirements
 
@@ -38,9 +45,13 @@ The architecture separates game logic, player behavior, and card management into
 - **Python 3.9+** (recommended: Python 3.9 or 3.10)
 
 ### Dependencies
-This project uses only Python standard library:
-- `random` - for deck shuffling
-- No external dependencies required!
+- `phevaluator` - for hand evaluation in Texas Hold'em
+- `random` (standard library) - for deck shuffling
+
+Install dependencies:
+```bash
+pip install phevaluator
+```
 
 ## Installation
 
@@ -67,69 +78,191 @@ This project uses only Python standard library:
 ```
 PokerBot/
 ├── README.md                 # This file
+├── LICENSE                   # MIT License
+├── PROJECT_STRUCTURE.md      # Detailed structure documentation
+├── GAME_VARIANTS.md          # Game variant descriptions
+├── QUICK_REFERENCE.md        # Quick reference guide
 ├── .gitignore               # Git ignore rules
 ├── PokerBot.iml            # IntelliJ project file
 ├── .venv/                  # Virtual environment (not in repo)
 ├── .idea/                  # IDE settings (not in repo)
 └── src/
-    └── game/
-        ├── __init__.py     # Package initializer
-        ├── cards.py        # Card and Deck classes
-        ├── player.py       # Player and Agent classes
-        └── table.py        # Game logic and betting rounds
+    ├── __init__.py          # Main package init
+    │
+    ├── games/               # Game implementations
+    │   ├── __init__.py
+    │   ├── base.py          # Abstract PokerGame interface
+    │   ├── kuhn_poker.py    # Kuhn Poker (3-card variant)
+    │   ├── leduc_poker.py   # Leduc Poker (placeholder)
+    │   ├── limit_holdem.py  # Limit Hold'em (placeholder)
+    │   └── nl_holdem.py     # No Limit Hold'em (fully implemented)
+    │
+    ├── algorithms/          # CFR training algorithms
+    │   ├── __init__.py
+    │   ├── cfr.py           # Generic CFR class
+    │   ├── mccfr.py         # Monte Carlo CFR (placeholder)
+    │   ├── info_set.py      # Information Set class
+    │   └── cfr_plus.py      # CFR+ variant (placeholder)
+    │
+    ├── evaluation/          # Strategy evaluation tools
+    │   ├── __init__.py
+    │   ├── evaluator.py     # Head-to-head play evaluation
+    │   └── exploitability.py # Exploitability calculations
+    │
+    ├── utils/               # Shared utilities
+    │   ├── __init__.py
+    │   ├── cards.py         # Card and Deck classes
+    │   └── player.py        # Player and Agent classes
+    │
+    └── examples/            # Training examples
+        ├── train_kuhn.py    # Kuhn Poker CFR training
+        └── train_leduc.py   # Leduc Poker CFR training
 ```
+
+## Module Organization
+
+### `games/`
+Contains all poker game variant implementations. Each game inherits from the abstract `PokerGame` class and implements:
+- `startRound()`: Initialize and run a complete round
+- `bettingRound()`: Handle betting logic
+- `getWinner()`: Determine winner and distribute pot
+
+### `algorithms/`
+CFR (Counterfactual Regret Minimization) implementations for training optimal poker strategies.
+
+### `evaluation/`
+Tools for evaluating trained strategies through head-to-head play and exploitability analysis.
+
+### `utils/`
+Shared utilities for cards, decks, players, and agents.
+
+### `examples/`
+Runnable examples showing how to train CFR on different game variants.
+
+---
 
 ## Module Documentation
 
-### `cards.py`
+### `games/`
+Contains poker game variant implementations. All games inherit from the abstract `PokerGame` class.
+
+**Available Games:**
+- **NLHoldem**: No Limit Texas Hold'em (fully implemented)
+- **KuhnPoker**: Simplified 3-card poker for CFR training
+- **LeducPoker**: 6-card poker variant (placeholder)
+- **LimitHoldem**: Limit betting variant (placeholder)
+
+**Example Usage:**
+```python
+from src.games import NLHoldem, KuhnPoker
+from src.utils import Player, RandomAgent
+
+# Create players
+players = [
+    Player(buy_in=1000, agent=RandomAgent(), name="Player1"),
+    Player(buy_in=1000, agent=RandomAgent(), name="Player2")
+]
+
+# Create and start a game
+game = NLHoldem(players=players, big_blind=20)
+game.startRound()
+```
+
+### `utils/cards.py`
 Handles card and deck management.
 
 **Classes:**
-- `Card`: Represents a single playing card with suit and value
+- `Card`: Represents a single playing card
 - `Deck`: Manages a 52-card deck with shuffle and deal methods
 
 **Example Usage:**
 ```python
-from game.cards import Deck
+from src.utils import Card, Deck
 
+# Create cards
+card = Card("Ah")  # Ace of hearts
+print(card.getRank())  # "A"
+print(card.getSuit())  # "h"
+
+# Use deck
 deck = Deck()
 deck.shuffle()
 hand = deck.deal(2)  # Deal 2 cards
 ```
 
-### `player.py`
+### `utils/player.py`
 Defines player behavior and AI agent interface.
 
 **Classes:**
 - `Agent`: Abstract base class for AI decision-making
   - Subclass this to create your own poker bots
-  - Implement `decide(state, legal_actions)` method
+  - Implement `decide(state)` method
+- `RandomAgent`: Simple agent that makes random legal decisions
 - `Player`: Represents a player with stack, hand, and betting logic
 
 **Creating a Custom Bot:**
 ```python
-from game.player import Agent, Player
+from src.utils import Agent, Player
 
 class MyBot(Agent):
-    def decide(self, state, legal_actions):
+    def decide(self, state):
         # Your strategy here
-        return {"action": "Call", "amount": 0}
+        if state["call_amnt"] == 0:
+            return "Check"
+        return "Call"
 
 player = Player(buy_in=1000, agent=MyBot(), name="Bot1")
 ```
 
-### `table.py`
-Manages game flow and betting rounds.
+### `algorithms/`
+CFR (Counterfactual Regret Minimization) implementations for training optimal strategies.
 
-**Classes:**
-- `Game`: Main game controller
-  - Handles dealer rotation
-  - Manages community cards and pot
-  - Controls betting rounds
+**Planned Components:**
+- `CFR`: Generic CFR algorithm
+- `MCCFR`: Monte Carlo CFR for larger games
+- `CFRPlus`: Faster converging CFR variant
+- `InformationSet`: Stores strategy and regret data
 
-**Key Methods:**
-- `startRound()`: Initializes a new hand with blinds
-- `bettingRound(starting_index, min_raise)`: Executes one betting round
+### `evaluation/`
+Tools for evaluating trained strategies.
+
+**Planned Components:**
+- `Evaluator`: Head-to-head match simulation
+- `exploitability`: Calculate how exploitable a strategy is
+
+---
+
+## Game Variants
+
+### No Limit Texas Hold'em
+- **Players**: 2-10
+- **Deck**: Standard 52 cards
+- **Hand Size**: 2 hole cards + 5 community cards
+- **Betting Rounds**: 4 (pre-flop, flop, turn, river)
+- **Status**: ✅ Fully implemented
+
+### Kuhn Poker
+- **Players**: 2
+- **Deck**: 3 cards (K, Q, J)
+- **Hand Size**: 1 hole card
+- **Betting Rounds**: 1
+- **Status**: ✅ Fully implemented
+
+### Leduc Poker
+- **Players**: 2
+- **Deck**: 6 cards (2 Jacks, 2 Queens, 2 Kings)
+- **Hand Size**: 1 hole card + 1 community card
+- **Betting Rounds**: 2
+- **Status**: 🚧 Placeholder (to be implemented)
+
+### Limit Hold'em
+- **Players**: 2-10
+- **Deck**: Standard 52 cards
+- **Hand Size**: 2 hole cards + 5 community cards
+- **Betting Rounds**: 4 (pre-flop, flop, turn, river)
+- **Status**: 🚧 Placeholder (to be implemented)
+
+---
 
 ## Poker Rules Implementation
 
@@ -153,37 +286,38 @@ This implementation follows **No-Limit Texas Hold'em** rules:
 
 ## Usage Example
 
-> **Note**: The game engine is still under development. Below is the intended usage once Phase 1 is complete.
-
 ```python
-from game.cards import Deck
-from game.player import Agent, Player
-from game.table import Game
+from src.games import NLHoldem, KuhnPoker
+from src.utils import Agent, Player, RandomAgent
 
-# Create custom agent (Phase 2 - not yet implemented)
+# Create custom agent
 class SimpleBot(Agent):
-    def decide(self, state, legal_actions):
-        # Placeholder - bot logic will be developed in Phase 2
-        if state["call_amnt"] == 0:
-            return {"action": "Check"}
-        return {"action": "Call"}
+    def decide(self, state):
+        # Simple strategy: check/call only
+        if state.get("call_amnt", 0) == 0:
+            return "Check"
+        return "Call"
 
 # Set up players
 players = [
     Player(buy_in=1000, agent=SimpleBot(), name="Bot1"),
-    Player(buy_in=1000, agent=SimpleBot(), name="Bot2"),
-    Player(buy_in=1000, agent=SimpleBot(), name="Bot3"),
+    Player(buy_in=1000, agent=RandomAgent(), name="Bot2"),
+    Player(buy_in=1000, agent=RandomAgent(), name="Bot3"),
 ]
 
-# Create game
-game = Game(players=players, BIGBLIND_BET=20)
-
-# Start a round
+# Create and run a No Limit Hold'em game
+game = NLHoldem(players=players, big_blind=20)
 game.startRound()
 
-# Run betting rounds (currently implementing)
-min_raise = game.BIGBLIND_BET
-min_raise = game.bettingRound(starting_index=game.dealer_index + 3, min_raise=min_raise)
+print(f"Winner's stacks: {[p.stack for p in players]}")
+
+# Or try Kuhn Poker (simpler variant)
+kuhn_players = [
+    Player(buy_in=100, agent=RandomAgent(), name="P1"),
+    Player(buy_in=100, agent=RandomAgent(), name="P2"),
+]
+kuhn_game = KuhnPoker(players=kuhn_players)
+kuhn_game.startRound()
 ```
 
 ## Development Status
@@ -229,7 +363,7 @@ Feel free to fork this project and implement your own poker strategies! The agen
 
 ## License
 
-[Add your license here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Author
 

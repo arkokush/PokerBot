@@ -1,9 +1,9 @@
-from .base_game import Game
-from ..cards import Deck
+from .base import PokerGame
+from ..utils.cards import Deck
 from phevaluator.evaluator import evaluate_cards
 
 
-class NLHoldemGame(Game):
+class NLHoldem(PokerGame):
     """
     No Limit Texas Hold'em implementation.
     """
@@ -16,7 +16,7 @@ class NLHoldemGame(Game):
         self.dealer_index = 0
 
     def startRound(self):
-        deck = Deck()
+        self.deck = Deck()
         self.community_cards = []
         self.dealer_index = (self.dealer_index + 1) % self.num_players
         self.deck.shuffle()

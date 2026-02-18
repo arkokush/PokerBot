@@ -1,7 +1,7 @@
-from .base_game import Game
-from ..cards import Deck, Card
+from .base import PokerGame
+from ..utils.cards import Deck, Card
 
-class KuhnPokerGame(Game):
+class KuhnPoker(PokerGame):
     """
     Kuhn Poker implementation.
 

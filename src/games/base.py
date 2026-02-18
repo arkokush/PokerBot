@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-class Game(ABC):
+class PokerGame(ABC):
     """
     Abstract base class for poker game variants.
     Each variant must implement these methods.
