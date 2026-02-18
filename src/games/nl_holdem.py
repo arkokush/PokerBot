@@ -14,6 +14,7 @@ class NLHoldem(PokerGame):
         self.community_cards = []
         self.current_bet = 0
         self.dealer_index = 0
+        self.deck = Deck()
 
     def startRound(self):
         self.deck = Deck()
@@ -25,7 +26,7 @@ class NLHoldem(PokerGame):
 
         for player in self.players:
             player.reset_for_new_round()
-            player.hand = self.deck.deal(2)
+            player.getCards(self.deck.deal(2))
 
         self.pot += self.players[(self.dealer_index + 1) % self.num_players].bet(self.BIGBLIND_BET//2)
         self.pot += self.players[(self.dealer_index + 2) % self.num_players].bet(self.BIGBLIND_BET)
@@ -36,19 +37,30 @@ class NLHoldem(PokerGame):
         while self.players[first_bet_index].folded:
             first_bet_index = (first_bet_index + 1) % self.num_players
 
+        self._reset_bets_for_new_street()
+        min_raise = self.BIGBLIND_BET
         flop = self.deck.deal(3)
         self.community_cards.extend(flop)
         min_raise = self.bettingRound(first_bet_index, min_raise)
 
+        self._reset_bets_for_new_street()
+        min_raise = self.BIGBLIND_BET
         turn = self.deck.deal(1)
         self.community_cards.extend(turn)
         min_raise = self.bettingRound(first_bet_index, min_raise)
 
+        self._reset_bets_for_new_street()
+        min_raise = self.BIGBLIND_BET
         river = self.deck.deal(1)
         self.community_cards.extend(river)
         self.bettingRound(first_bet_index, min_raise)
 
         self.getWinner(self.community_cards, self.players, self.pot)
+
+    def _reset_bets_for_new_street(self):
+        self.current_bet = 0
+        for player in self.players:
+            player.current_bet = 0
 
     def bettingRound(self, starting_index, min_raise):
         i = starting_index % self.num_players
@@ -138,4 +150,4 @@ class NLHoldem(PokerGame):
                 win_index.append(i)
 
         for i in win_index:
-            players[i].stack += pot / len(win_index)
+            players[i].buy_in(pot / len(win_index))

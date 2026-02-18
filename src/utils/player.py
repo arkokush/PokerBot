@@ -1,5 +1,5 @@
 class Agent:
-    #player_state = {
+    #NLHE player_state = {
     #    "hand": player.hand,
     #    "current_bet": player.current_bet,
     #    "player_stack": player.stack,
@@ -55,7 +55,7 @@ class Player:
             self.all_in = True
         return amount
 
-    def buyIn(self, amount: int):
+    def buy_in(self, amount: int):
         self.stack += amount
         return self.stack
 

@@ -6,7 +6,7 @@ class KuhnPoker(PokerGame):
     Kuhn Poker implementation.
 
     Kuhn Poker is a simplified poker game with:
-    - 3 cards: King, Queen, Jack
+    - 3 cards: Ace, King, Queen
     - 2 players
     - Each player gets 1 card
     - 1 betting round
@@ -40,10 +40,10 @@ class KuhnPoker(PokerGame):
             5. Determine winner
             """
 
-            deck = Deck(cards=[Card("Kh"), Card("Qh"), Card("Jh")])
+            deck = Deck(cards=[Card("Ah"), Card("Kh"), Card("Qh")])
             self.pot = 2
-            self.player1.stack -= 1
-            self.player2.stack -= 1
+            self.player1.bet(1)
+            self.player2.bet(1)
 
             deck.shuffle()
             self.player1.hand = deck.deal(1)
@@ -70,8 +70,7 @@ class KuhnPoker(PokerGame):
         player1_decision = self.player1.decide(player1_state)
 
         if player1_decision == "Bet":
-            self.pot += 1
-            self.player1.stack -= 1
+            self.pot += self.player1.bet(1)
 
         player2_state = (2, self.player2.hand, self.player2.stack, self.pot, player1_decision)
         player2_decision = self.player2.decide(player2_state)
@@ -82,8 +81,7 @@ class KuhnPoker(PokerGame):
                 return
 
             elif player2_decision == "Call":
-                self.pot += 1
-                self.player2.stack -= 1
+                self.pot += self.player2.bet(1)
                 self.getWinner()
                 return
         else:
@@ -92,8 +90,7 @@ class KuhnPoker(PokerGame):
                 return
 
             elif player2_decision == "Bet":
-                self.pot += 1
-                self.player2.stack -= 1
+                self.pot += self.player2.bet(1)
 
                 player1_state = (1, self.player1.hand, self.player1.stack, self.pot, player2_decision)
                 player1_decision = self.player1.decide(player1_state)
@@ -102,8 +99,7 @@ class KuhnPoker(PokerGame):
                     self.getWinner(folded = 1)
                     return
                 elif player1_decision == "Call":
-                    self.pot += 1
-                    self.player1.stack -= 1
+                    self.pot += self.player1.bet(1)
                     self.getWinner()
                     return
 
@@ -117,22 +113,22 @@ class KuhnPoker(PokerGame):
         - If both players are in, highest card wins (K > Q > J)
         """
         if folded == 1:
-            self.player2.stack += self.pot
+            self.player2.buy_in(self.pot)
             return 2
 
         elif folded == 2:
-            self.player1.stack += self.pot
+            self.player1.buy_in(self.pot)
             return 1
 
         else:
-            rank_values = {'K': 2, 'Q': 1, 'J': 0}
+            rank_values = {'A': 2, 'K': 1, 'Q': 0}
             player1_rank = self.player1.hand[0].getRank()
             player2_rank = self.player2.hand[0].getRank()
 
             if rank_values[player1_rank] > rank_values[player2_rank]:
-                self.player1.stack += self.pot
+                self.player1.buy_in(self.pot)
                 return 1
 
             else:
-                self.player2.stack += self.pot
+                self.player2.buy_in(self.pot)
                 return 2
