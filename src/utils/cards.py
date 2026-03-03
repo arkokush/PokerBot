@@ -45,7 +45,7 @@ class Card:
         return rank_reverse_map[self.id // 4]
 
     def getSuit(self):
-        return suit_reverse_map[self.id % 4]
+        return suit_reverse_map[self.id % 4].lower()
 
     def getCardVal(self):
         return f"{self.getRank()}{self.getSuit()}"

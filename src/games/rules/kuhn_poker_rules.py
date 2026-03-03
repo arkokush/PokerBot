@@ -14,7 +14,7 @@ class KuhnPokerRules(PokerGameRules):
 
         Returns:
             (card1, card2) where cards are integers:
-            0 = Queen/Jack, 1 = King/Queen, 2 = Ace/King
+            0 = Jack, 1 = Queen, 2 = King
         """
         cards = [0, 1, 2]
         random.shuffle(cards)

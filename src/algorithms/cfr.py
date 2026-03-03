@@ -3,7 +3,7 @@ from .info_set import InformationSet
 
 class CFR:
     """
-    Counterfactual Regret Minimization (CFR) implementation.
+    Generic Counterfactual Regret Minimization (CFR) implementation.
     """
 
     def __init__(self, game):
@@ -28,9 +28,3 @@ class CFR:
         """Get the computed average strategy for all information sets."""
         pass
 
-
-class CFR_Node:
-
-    def __init__(self, history = None):
-        self.history = history
-        self.choices = []
