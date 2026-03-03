@@ -1,5 +1,5 @@
 from .base import PokerGame
-from ..utils.cards import Deck, Card
+from src.utils.cards import Deck, Card
 
 class KuhnPoker(PokerGame):
     """

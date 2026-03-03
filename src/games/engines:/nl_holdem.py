@@ -1,5 +1,5 @@
 from .base import PokerGame
-from ..utils.cards import Deck
+from src.utils.cards import Deck
 from phevaluator.evaluator import evaluate_cards
 
 
