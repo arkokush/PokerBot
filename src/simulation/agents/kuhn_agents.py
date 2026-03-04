@@ -1,4 +1,4 @@
-from game.player import Agent
+from src.utils.player import Agent
 
 
 class KuhnAgent(Agent):

@@ -1,4 +1,4 @@
-from .base import PokerGame
+from src.simulation.base import PokerGame
 
 
 class LeducPoker(PokerGame):

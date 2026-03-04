@@ -1,4 +1,4 @@
-from .base import PokerGame
+from src.simulation.base import PokerGame
 from src.utils.cards import Deck
 from phevaluator.evaluator import evaluate_cards
 

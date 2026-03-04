@@ -1,6 +1,6 @@
 import random
 
-from src.games.rules.poker_game_rules import PokerGameRules
+from src.training.base import PokerGameRules
 
 
 class KuhnPokerRules(PokerGameRules):
@@ -49,7 +49,7 @@ class KuhnPokerRules(PokerGameRules):
 
         return payoff if player == 0 else -payoff
 
-    def get_info_set_string(self, player_card: tuple, history: str, com_cards: tuple = None) -> str:
+    def get_info_set_string(self, player_card: tuple, history: str, other_info: tuple = None) -> str:
         """
         Create info set identifier.
         """
