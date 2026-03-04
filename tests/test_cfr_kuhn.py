@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from src.algorithms.cfr import CFR
 from src.training.kuhn_poker import KuhnPokerRules
 
-ITERATIONS = 100000000
+ITERATIONS = 100_000
 
 def run():
     game = KuhnPokerRules()

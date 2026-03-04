@@ -1,60 +1,68 @@
+from typing import Dict
 from .info_set import InformationSet
 from src.training.base import PokerGameRules
-from typing import Dict
 
 
 class CFR:
-    """
-    Generic Counterfactual Regret Minimization (CFR) implementation.
-    """
-
     def __init__(self, game: PokerGameRules):
         self.game = game
         self.info_sets: Dict[str, InformationSet] = {}
 
-    def get_info_set(self, info_set_key, num_actions) -> InformationSet:
-        """Get or create an information set."""
+    def get_info_set(self, info_set_key: str, num_actions: int) -> InformationSet:
         if info_set_key not in self.info_sets:
             self.info_sets[info_set_key] = InformationSet(num_actions)
         return self.info_sets[info_set_key]
 
-    def train(self, iterations):
+    def train(self, iterations: int):
+        """Train CFR for N iterations"""
         for _ in range(iterations):
             cards = self.game.deal_cards()
-            self.cfr(cards, '', 1.0, 1.0)
+            self.cfr(cards, "", 1.0, 1.0)
 
-    def cfr(self, cards: tuple, history: str, reach_p0: float = 1.0, reach_p1: float = 1.0) -> float:
+    def cfr(self, cards: tuple, history: str, reach_p0: float, reach_p1: float) -> float:
+        """
+        Recursive CFR algorithm.
+        Returns: Utility of the node for the *current* player (whose turn it is).
+        """
         player = len(history) % 2
         player_card = cards[player]
 
         if self.game.is_terminal(history):
-            return self.game.get_payoff(cards, history)
+            payoff_p0 = self.game.get_payoff(cards, history)
+            return payoff_p0 if player == 0 else -payoff_p0
 
         actions = self.game.get_legal_actions(history)
         info_set_key = self.game.get_info_set_string(player_card, history)
-        info_set = self.get_info_set(info_set_key, actions)
+        info_set = self.get_info_set(info_set_key, len(actions))
+
+        strategy = info_set.get_strategy()
 
         my_reach = reach_p0 if player == 0 else reach_p1
         opp_reach = reach_p1 if player == 0 else reach_p0
 
-        action_strategy = info_set.get_strategy(my_reach)
-        action_util = [0.0] * len(action_strategy)
-        avg_util = 0.0
+        for i in range(len(actions)):
+            info_set.strategy_sum[i] += my_reach * strategy[i]
+
+        action_utils = [0.0] * len(actions)
+        node_util_sum = 0.0
 
         for i, action in enumerate(actions):
+            next_history = history + action
+
             if player == 0:
-                action_util[i] = self.cfr(cards, history + action, reach_p0 * action_strategy[i], reach_p1)
+                child_util = -self.cfr(cards, next_history, reach_p0 * strategy[i], reach_p1)
             else:
-                action_util[i] = self.cfr(cards, history + action, reach_p0, reach_p1 * action_strategy[i])
-            avg_util += action_strategy[i] * action_util[i]
+                child_util = -self.cfr(cards, next_history, reach_p0, reach_p1 * strategy[i])
+
+            action_utils[i] = child_util
+            node_util_sum += strategy[i] * child_util
 
         for i in range(len(actions)):
-            regret = action_util[i] - avg_util
+            regret = action_utils[i] - node_util_sum
             info_set.regret_sum[i] += opp_reach * regret
 
-        return avg_util
+        return node_util_sum
 
-    def get_strategy(self):
-        return {key: is_.get_average_strategy() for key, is_ in self.info_sets.items()}
-
-
+    def get_strategy(self) -> Dict[str, list]:
+        """Return the Average Strategy (Nash Equilibrium)"""
+        return {key: info_set.get_average_strategy() for key, info_set in self.info_sets.items()}
