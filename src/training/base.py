@@ -22,7 +22,7 @@ class PokerGameRules:
         """
         raise NotImplementedError
 
-    def get_payoff(self, player_cards: tuple, history: str, player: int, com_cards: tuple = None) -> float:
+    def get_payoff(self, player_cards: tuple, history: str, com_cards: tuple = None) -> float:
         """
         Get payoff for a terminal state.
 
@@ -56,7 +56,7 @@ class PokerGameRules:
         """
         raise NotImplementedError
 
-    def get_legal_actions(self, history: str) -> List[str]:
+    def get_legal_actions(self, history: str) -> list[str]:
         """
         Get legal actions at this point.
 

@@ -1,6 +1,6 @@
 import random
 
-from src.games.rules.poker_game_rules import PokerGameRules
+from src.training.base import PokerGameRules
 
 
 class KuhnPokerRules(PokerGameRules):
@@ -27,7 +27,7 @@ class KuhnPokerRules(PokerGameRules):
         """
         return history in {'PP', 'BP', 'BB', 'PBP', 'PBB'}
 
-    def get_payoff(self, player_cards: tuple, history: str, player: int, com_cards: tuple = None) -> float:
+    def get_payoff(self, player_cards: tuple, history: str, com_cards: tuple = None) -> float:
         """
         Get payoff for a terminal state.
 
@@ -47,9 +47,9 @@ class KuhnPokerRules(PokerGameRules):
         else:
             raise ValueError(f"Invalid history: {history}")
 
-        return payoff if player == 0 else -payoff
+        return payoff
 
-    def get_info_set_string(self, player_card: tuple, history: str, com_cards: tuple = None) -> str:
+    def get_info_set_string(self, player_card: tuple, history: str, other_info: tuple = None) -> str:
         """
         Create info set identifier.
         """
