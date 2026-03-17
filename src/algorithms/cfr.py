@@ -20,16 +20,12 @@ class CFR:
             self.cfr(cards, "", 1.0, 1.0)
 
     def cfr(self, cards: tuple, history: str, reach_p0: float, reach_p1: float) -> float:
-        """
-        Recursive CFR algorithm.
-        Returns: Utility of the node for the *current* player (whose turn it is).
-        """
+        """Returns utility from P0's perspective throughout."""
         player = len(history) % 2
         player_card = cards[player]
 
         if self.game.is_terminal(history):
-            payoff_p0 = self.game.get_payoff(cards, history)
-            return payoff_p0 if player == 0 else -payoff_p0
+            return self.game.get_payoff(cards, history)
 
         actions = self.game.get_legal_actions(history)
         info_set_key = self.game.get_info_set_string(player_card, history)
@@ -44,25 +40,26 @@ class CFR:
             info_set.strategy_sum[i] += my_reach * strategy[i]
 
         action_utils = [0.0] * len(actions)
-        node_util_sum = 0.0
+        node_util = 0.0
 
         for i, action in enumerate(actions):
             next_history = history + action
 
             if player == 0:
-                child_util = -self.cfr(cards, next_history, reach_p0 * strategy[i], reach_p1)
+                action_utils[i] = self.cfr(cards, next_history, reach_p0 * strategy[i], reach_p1)
             else:
-                child_util = -self.cfr(cards, next_history, reach_p0, reach_p1 * strategy[i])
+                action_utils[i] = self.cfr(cards, next_history, reach_p0, reach_p1 * strategy[i])
 
-            action_utils[i] = child_util
-            node_util_sum += strategy[i] * child_util
+            node_util += strategy[i] * action_utils[i]
 
+        sign = 1 if player == 0 else -1
         for i in range(len(actions)):
-            regret = action_utils[i] - node_util_sum
+            regret = sign * (action_utils[i] - node_util)
             info_set.regret_sum[i] += opp_reach * regret
 
-        return node_util_sum
+        return node_util
 
     def get_strategy(self) -> Dict[str, list]:
         """Return the Average Strategy (Nash Equilibrium)"""
         return {key: info_set.get_average_strategy() for key, info_set in self.info_sets.items()}
+
