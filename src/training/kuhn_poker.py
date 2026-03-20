@@ -37,7 +37,7 @@ class KuhnPokerRules(PokerGameRules):
 
         raise ValueError(f"Invalid history: {history}")
 
-    def get_info_set_string(self, player_card: int, history: str, other_info: tuple = None) -> str:
+    def get_info_set_string(self, player_card: int, history: str, com_cards: tuple = None) -> str:
         card_names = {0: 'J', 1: 'Q', 2: 'K'}
         return f"{card_names[player_card]}:{history}"
 
