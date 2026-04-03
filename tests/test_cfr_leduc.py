@@ -23,6 +23,15 @@ from src.training.leduc_poker import LeducPokerRules
 
 ITERATIONS = 100_000
 
+CARD_NAMES = {0: 'J', 1: 'J', 2: 'Q', 3: 'Q', 4: 'K', 5: 'K'}
+HOLE_CARDS = ['J', 'Q', 'K']
+BOARD_CARDS = ['J', 'Q', 'K']
+
+ACTION_LABELS = {
+    2: ('Pass', 'Bet'),
+    3: ('Fold', 'Call', 'Raise'),
+}
+
 
 def check_valid_distribution(strategy):
     """Every info set strategy must be a valid probability distribution."""
@@ -40,8 +49,6 @@ def check_valid_distribution(strategy):
 def check_card_ordering(strategy):
     """In symmetric spots, stronger cards should bet/call at least as often."""
     ordering_violations = []
-    # Round 1 opening: J, Q, K with empty history
-    # Bet probability should increase with card strength
     r1_keys = {"J:": None, "Q:": None, "K:": None}
     for key in r1_keys:
         if key in strategy:
@@ -49,9 +56,7 @@ def check_card_ordering(strategy):
 
     if all(v is not None for v in r1_keys.values()):
         j_bet = r1_keys["J:"][1]
-        q_bet = r1_keys["Q:"][1]
         k_bet = r1_keys["K:"][1]
-        # K should bet more than J (Q can be anywhere due to bluffing)
         if k_bet < j_bet - 0.05:
             ordering_violations.append(
                 f"  K bets less than J at opening (K:{k_bet:.3f} < J:{j_bet:.3f})"
@@ -75,61 +80,94 @@ def check_not_uniform(strategy):
     return []
 
 
-def print_round1_strategies(strategy):
-    """Print round 1 strategies for inspection."""
-    print("  Round 1 — Opening (no community card visible)")
-    print(f"  {'Info Set':<10} {'Pass':>8} {'Bet':>8}")
-    print("  " + "-" * 28)
-    for card in ["J:", "Q:", "K:"]:
-        if card in strategy:
-            probs = strategy[card]
-            print(f"  {card:<10} {probs[0]*100:>7.1f}% {probs[1]*100:>7.1f}%")
-    print()
+def format_row(key, probs):
+    """Format one info set row with dynamic column count."""
+    labels = ACTION_LABELS.get(len(probs))
+    if labels:
+        cols = "  ".join(f"{l}: {p*100:>5.1f}%" for l, p in zip(labels, probs))
+    else:
+        cols = "  ".join(f"{p*100:>5.1f}%" for p in probs)
+    return f"  {key:<22} {cols}"
 
 
-def print_round1_responses(strategy):
-    """Print round 1 response strategies."""
-    print("  Round 1 — Response to Bet")
-    print(f"  {'Info Set':<10} {'Fold':>8} {'Call':>8} {'Raise':>8}")
-    print("  " + "-" * 40)
-    for card in ["J:B", "Q:B", "K:B"]:
-        if card in strategy:
-            probs = strategy[card]
-            print(f"  {card:<10} {probs[0]*100:>7.1f}% {probs[1]*100:>7.1f}% {probs[2]*100:>7.1f}%")
-    print()
+def get_round1_keys(strategy):
+    """Get all round 1 info set keys, grouped by history."""
+    keys = []
+    for key in strategy:
+        if '|' not in key:
+            keys.append(key)
+    return keys
 
 
-def print_sample_round2(strategy):
-    """Print a sample of round 2 strategies."""
-    print("  Round 2 — Sample (after check-check, board=Q)")
-    print(f"  {'Info Set':<20} {'Pass':>8} {'Bet':>8}")
-    print("  " + "-" * 38)
-    for card in ["J", "Q", "K"]:
-        key = f"{card}|Q:PP//"
-        if key in strategy:
-            probs = strategy[key]
-            print(f"  {key:<20} {probs[0]*100:>7.1f}% {probs[1]*100:>7.1f}%")
-    print()
+def get_round2_keys(strategy, board):
+    """Get all round 2 info set keys for a given board card."""
+    keys = []
+    for key in strategy:
+        if f'|{board}:' in key:
+            keys.append(key)
+    return keys
 
 
-def run():
-    game = LeducPokerRules()
-    cfr = CFR(game)
+def sort_info_keys(keys):
+    """Sort info set keys by history length then alphabetically."""
+    return sorted(keys, key=lambda k: (len(k.split(':')[1]), k))
 
-    print(f"Training CFR on Leduc Poker for {ITERATIONS:,} iterations...\n")
-    cfr.train(ITERATIONS)
 
-    strategy = cfr.get_strategy()
-    print(f"  Total info sets: {len(strategy)}\n")
+def print_full_table(strategy):
+    """Print the complete strategy table grouped by card and round."""
+    print("\n" + "=" * 60)
+    print("  FULL STRATEGY TABLE")
+    print("=" * 60)
 
-    # Print strategies
-    print_round1_strategies(strategy)
-    print_round1_responses(strategy)
-    print_sample_round2(strategy)
+    for hole in HOLE_CARDS:
+        print(f"\n  === Holding: {hole} ===\n")
 
-    # Run checks
+        # Round 1
+        r1 = sort_info_keys([k for k in get_round1_keys(strategy) if k.startswith(f"{hole}:")])
+        if r1:
+            print(f"  Round 1:")
+            for key in r1:
+                print(format_row(key, strategy[key]))
+            print()
+
+        # Round 2 by board card
+        for board in BOARD_CARDS:
+            pair = " (PAIR)" if hole == board else ""
+            r2 = sort_info_keys(get_round2_keys(strategy, board))
+            r2 = [k for k in r2 if k.startswith(f"{hole}|")]
+            if r2:
+                print(f"  Round 2 — Board: {board}{pair}:")
+                for key in r2:
+                    print(format_row(key, strategy[key]))
+                print()
+
+
+def print_deal_table(strategy, hole_card, board_card):
+    """Print strategy table filtered to a specific deal."""
+    print(f"\n  === Holding: {hole_card}  |  Board: {board_card} ===\n")
+
+    # Round 1 — always the same for a given hole card
+    r1 = sort_info_keys([k for k in get_round1_keys(strategy) if k.startswith(f"{hole_card}:")])
+    if r1:
+        print(f"  Round 1:")
+        for key in r1:
+            print(format_row(key, strategy[key]))
+        print()
+
+    # Round 2 for specific board
+    pair = " (PAIR)" if hole_card == board_card else ""
+    r2 = sort_info_keys(get_round2_keys(strategy, board_card))
+    r2 = [k for k in r2 if k.startswith(f"{hole_card}|")]
+    if r2:
+        print(f"  Round 2 — Board: {board_card}{pair}:")
+        for key in r2:
+            print(format_row(key, strategy[key]))
+        print()
+
+
+def run_checks(strategy):
+    """Run validation checks and print results."""
     all_passed = True
-
     print("  Checks:")
 
     errors = check_valid_distribution(strategy)
@@ -164,6 +202,48 @@ def run():
         print("  All checks passed.")
     else:
         print("  Some checks FAILED.")
+
+
+def pick_option(prompt, options):
+    """Display numbered options and return the chosen value."""
+    print(prompt)
+    for i, (label, value) in enumerate(options):
+        print(f"  [{i}] {label}")
+    while True:
+        choice = input("> ").strip()
+        if choice.isdigit() and 0 <= int(choice) < len(options):
+            return options[int(choice)][1]
+        print(f"  Enter 0-{len(options)-1}")
+
+
+def run():
+    game = LeducPokerRules()
+    cfr = CFR(game)
+
+    print(f"Training CFR on Leduc Poker for {ITERATIONS:,} iterations...\n")
+    cfr.train(ITERATIONS)
+
+    strategy = cfr.get_strategy()
+    print(f"  Total info sets: {len(strategy)}\n")
+
+    run_checks(strategy)
+
+    while True:
+        print()
+        mode = pick_option("View strategy:", [
+            ("Full table (all info sets)", "full"),
+            ("Filter by deal (pick hole + board)", "deal"),
+            ("Quit", "quit"),
+        ])
+
+        if mode == "quit":
+            break
+        elif mode == "full":
+            print_full_table(strategy)
+        elif mode == "deal":
+            hole = pick_option("Hole card:", [(c, c) for c in HOLE_CARDS])
+            board = pick_option("Board card:", [(c, c) for c in BOARD_CARDS])
+            print_deal_table(strategy, hole, board)
 
 
 if __name__ == '__main__':
