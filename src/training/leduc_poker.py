@@ -15,7 +15,7 @@ class LeducPokerRules(PokerGameRules):
         return cards[0], cards[1], cards[2]
 
     def is_terminal(self, history: str) -> bool:
-        rounds = history.split("/")
+        rounds = history.split("//")
         r1 = rounds[0]
         r2 = rounds[1] if len(rounds) > 1 else ""
 
@@ -49,11 +49,11 @@ class LeducPokerRules(PokerGameRules):
         card0, card1 = player_cards
         board = com_cards[0]
 
-        rounds = history.split("/")
+        rounds = history.split("//")
         r1 = rounds[0]
         r2 = rounds[1] if len(rounds) > 1 else ""
 
-        pot = self.get_pot(history)
+        pot = self._calculate_pot(history)
 
         if r2 == "":
             if r1[-1] != "F":
@@ -95,7 +95,7 @@ class LeducPokerRules(PokerGameRules):
         if '/' not in history:
             rounds = [history]
         else:
-            rounds = history.split('/')
+            rounds = history.split('//')
 
         for round_idx, round_history in enumerate(rounds):
             bet_size = 2 if round_idx == 0 else 4
@@ -126,28 +126,35 @@ class LeducPokerRules(PokerGameRules):
 
     def get_info_set_string(self, player_card: int, history: str, com_cards: tuple[int]) -> str:
         card_names = {0: 'J', 1: 'Q', 2: 'K'}
-        rounds = history.count('/')
+        rounds = history.count('//')
         if rounds == 0:
-            if self._round_terminal(history):
-                        return f"{card_names[player_card//2]}|{card_names[com_cards[0]//2]}:{history}/"
-             return f"{card_names[player_card//2]}:{history}"
-
+            return f"{card_names[player_card//2]}:{history}"
         return f"{card_names[player_card//2]}|{card_names[com_cards[0]//2]}:{history}"
 
     def get_legal_actions(self, history: str) -> list[str]:
-        if history == "":
+        rounds = history.split("//")
+        r1 = rounds[0]
+        r2 = rounds[1] if len(rounds) > 1 else None
+
+        # Between rounds: transition to round 2 by appending separator
+        if r2 is None and self._round_terminal(r1):
+            return ["//"]
+
+        current_round = rounds[-1]
+
+        if current_round == "":
             return ['P', 'B']
 
-        prev = history[-1]
-        if prev in ['F','C']:
-            return []
-        elif prev == 'P':
-            return ['P','B']
+        prev = current_round[-1]
+        if prev == 'P':
+            return ['P', 'B']
         elif prev == 'B':
-            return ['F','C','R']
-        elif prev == 'R' and history[-2] != 'R':
-            return ['F','C','R']
-        return['F', 'C']
+            return ['F', 'C', 'R']
+        elif prev == 'R':
+            if len(current_round) >= 2 and current_round[-2] == 'R':
+                return ['F', 'C']
+            return ['F', 'C', 'R']
+        return []
 
     def get_num_actions(self) -> int:
         return 5

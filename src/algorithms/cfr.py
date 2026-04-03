@@ -21,14 +21,19 @@ class CFR:
 
     def cfr(self, cards: tuple, history: str, reach_p0: float, reach_p1: float) -> float:
         """Returns utility from P0's perspective throughout."""
-        player = len(history) % 2
+        player = len(history.split("//")[-1]) % 2
         player_card = cards[player]
+        flop = cards[2] if len(cards) > 2 else None
+        turn = cards[3] if len(cards) > 3 else None
+        river = cards[4] if len(cards) > 4 else None
+
+        com_cards = (flop, turn, river)
 
         if self.game.is_terminal(history):
-            return self.game.get_payoff(cards, history)
+            return self.game.get_payoff(cards[:2], history, com_cards)
 
         actions = self.game.get_legal_actions(history)
-        info_set_key = self.game.get_info_set_string(player_card, history)
+        info_set_key = self.game.get_info_set_string(player_card, history, com_cards)
         info_set = self.get_info_set(info_set_key, len(actions))
 
         strategy = info_set.get_strategy()
@@ -49,7 +54,6 @@ class CFR:
                 action_utils[i] = self.cfr(cards, next_history, reach_p0 * strategy[i], reach_p1)
             else:
                 action_utils[i] = self.cfr(cards, next_history, reach_p0, reach_p1 * strategy[i])
-
             node_util += strategy[i] * action_utils[i]
 
         sign = 1 if player == 0 else -1
