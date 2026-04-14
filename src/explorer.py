@@ -14,6 +14,8 @@ import sys
 from src.algorithms.cfr import CFR
 from src.training.kuhn_poker import KuhnPokerRules
 from src.training.leduc_poker import LeducPokerRules
+from src.algorithms.exploitability import compute_exploitability
+from src.train_exploit import train_with_exploitability, print_convergence_graph
 
 CARD_NAMES = {0: 'J', 1: 'J', 2: 'Q', 3: 'Q', 4: 'K', 5: 'K'}
 KUHN_CARD_NAMES = {0: 'J', 1: 'Q', 2: 'K'}
@@ -24,9 +26,11 @@ LEDUC_ACTIONS = {'P': 'Pass/Check', 'B': 'Bet', 'F': 'Fold', 'C': 'Call', 'R': '
 
 def train(game, iterations):
     cfr = CFR(game)
-    print(f"\nTraining for {iterations:,} iterations...", end='', flush=True)
-    cfr.train(iterations)
-    print(" done.\n")
+    print(f"\nTraining for {iterations:,} iterations...\n")
+    iters_log, exploit_log = train_with_exploitability(cfr, iterations)
+    game_name = "Kuhn Poker" if len(game.deal_cards()) == 2 else "Leduc Poker"
+    print_convergence_graph(iters_log, exploit_log, game_name)
+    print(f"\n  Final exploitability: {exploit_log[-1]:.6f}\n")
     return cfr
 
 
@@ -248,8 +252,8 @@ def main():
         ("Leduc Poker (JJ/QQ/KK)", "leduc"),
     ])
 
-    iters = input("Training iterations [default 100000]: ").strip()
-    iterations = int(iters) if iters.isdigit() else 100_000
+    iters = input("Training iterations [default 300000]: ").strip()
+    iterations = int(iters) if iters.isdigit() else 300_000
 
     if game_choice == "kuhn":
         game = KuhnPokerRules()
