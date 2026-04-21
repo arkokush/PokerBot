@@ -1,6 +1,6 @@
 import random
 from src.training.base import PokerGameRules
-
+from phevaluator.evaluator import evaluate_cards
 
 class LimitPokerRules(PokerGameRules):
     """
@@ -8,6 +8,16 @@ class LimitPokerRules(PokerGameRules):
     Deck: 52 Cards, //4 = Val, %4 = Suit
     F = Fold, P = Pass/Check, C = Call, B = Bet, R = Raise
     """
+
+    rank_map = {
+        0: "2", 1: "3", 2: "4", 3: "5", 4: "6", 5: "7", 6: "8", 7: "9",
+        8: "T", 9: "J", 10: "Q", 11: "K", 12: "A",
+    }
+
+    suit_map = {
+        0: "c", 1: "d", 2: "h", 3: "s",
+    }
+
 
     def deal_cards(self) -> tuple:
         cards = random.sample(range(52), 9)
@@ -39,92 +49,64 @@ class LimitPokerRules(PokerGameRules):
             return True  # limp, big blind checks
         return False
 
-    def get_payoff(self, player_cards: tuple[int, int], history: str, com_cards: tuple[int]) -> float:
-        """
-        Returns payoff from PLAYER 0's perspective.
-        CFR loop handles flipping this for Player 1.
-        """
-
+    def get_payoff(self, player_cards, history, com_cards) -> float:
         if not self.is_terminal(history):
             raise ValueError(f"Invalid history: {history}")
 
-        card0, card1 = player_cards
-        board = com_cards[0]
+        cards0, cards1 = player_cards
+        commitments = self._calculate_commitments(history)
 
         rounds = history.split("//")
-        r1 = rounds[0]
-        r2 = rounds[1] if len(rounds) > 1 else ""
+        for r_idx, r in enumerate(rounds):
+            if r.endswith("F"):
+                if r_idx == 0:
+                    folder = (len(r) - 1 + 1) % 2
+                else:
+                    folder = (len(r) - 1) % 2
+                return -commitments[0] if folder == 0 else commitments[1]
 
-        pot = self._calculate_pot(history)
+        rank0 = self._evaluate(cards0, com_cards)
+        rank1 = self._evaluate(cards1, com_cards)
 
-        if r2 == "":
-            if r1[-1] != "F":
-                raise ValueError(f"Invalid history: {history}")
-            return pot if len(r1) % 2 == 0 else -pot
-
-        if r2[-1] == "F":
-            return pot if len(r2) % 2 == 0 else -pot
-
-        hand_rank = {
-        "02": 0, "20": 0, "12": 0, "21": 0, "03" : 0, "30" : 0, "13": 0, "31" : 0,
-        "04": 1, "40": 1, "14": 1, "41": 1, "05" : 1, "50" : 1, "15": 1, "51" : 1,
-        "24": 2, "42": 2, "34": 2, "43": 2, "25" : 2, "52" : 2, "35": 2, "53" : 2,
-        "01": 3, "10": 3,
-        "23": 4, "32": 4,
-        "45": 5, "54": 5,
-        }
-
-        rank0 = hand_rank[f"{card0}{board}"]
-        rank1 = hand_rank[f"{card1}{board}"]
-
-        if(rank0 > rank1):
-            return pot
-        elif(rank0 == rank1):
-            return 0
-        elif(rank0 < rank1):
-            return -pot
-
-        raise ValueError(f"Invalid history: {history}")
-
-    def _calculate_pot(self, history: str) -> int:
-        """
-        Calculate pot by simulating betting action by action.
-
-        This handles all edge cases correctly.
-        """
-        pot = 2  # Antes
-
-        if '/' not in history:
-            rounds = [history]
+        if rank0 > rank1:
+            return commitments[1]
+        elif rank0 < rank1:
+            return -commitments[0]
         else:
-            rounds = history.split('//')
+            return 0
+
+    def _calculate_commitments(self, history: str) -> list:
+        rounds = history.split("//") if "//" in history else [history]
+        commitments = [1, 1]  # antes + BB represented as forced bet
 
         for round_idx, round_history in enumerate(rounds):
-            bet_size = 2 if round_idx == 0 else 4
-
-            commitment = [0, 0]
+            bet_size = 2 if round_idx <= 1 else 4
+            commit = [0, 0]
             current_bet = 0
 
+            if round_idx == 0:
+                commit[0] = 1
+                current_bet = 1
+
             for action_idx, action in enumerate(round_history):
-                player = action_idx % 2
+                if round_idx == 0:
+                    player = (action_idx + 1) % 2
+                else:
+                    player = action_idx % 2
 
                 if action == 'B':
                     current_bet = bet_size
-                    commitment[player] = current_bet
-
+                    commit[player] = current_bet
                 elif action == 'R':
                     current_bet += bet_size
-                    commitment[player] = current_bet
-
+                    commit[player] = current_bet
                 elif action == 'C':
-                    commitment[player] = current_bet
+                    commit[player] = current_bet
 
-                elif action == 'F':
-                    pass
+            commitments[0] += commit[0]
+            commitments[1] += commit[1]
 
-            pot += sum(commitment)
-
-        return pot
+        return commitments
 
     def get_info_set_string(self, player_card: int, history: str, com_cards: tuple[int]) -> str:
         card_names = {0: 'J', 1: 'Q', 2: 'K'}
@@ -160,3 +142,6 @@ class LimitPokerRules(PokerGameRules):
 
     def get_num_actions(self) -> int:
         return 5
+
+    def _get_card(self, card: int):
+        return f"{rank_map[card // 4]}{suit_map[card % 4]}"
