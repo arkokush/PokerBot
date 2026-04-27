@@ -21,7 +21,7 @@ class CFR:
 
     def cfr(self, cards: tuple, history: str, reach_p0: float, reach_p1: float) -> float:
         """Returns utility from P0's perspective throughout."""
-        player = len(history.split("//")[-1]) % 2
+        player = self.game.get_acting_player(history)
         player_card = cards[player]
         flop = cards[2] if len(cards) > 2 else None
         turn = cards[3] if len(cards) > 3 else None

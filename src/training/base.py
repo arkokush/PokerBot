@@ -56,6 +56,14 @@ class PokerGameRules:
         """
         raise NotImplementedError
 
+    def get_acting_player(self, history: str) -> int:
+        """
+        Return which player (0 or 1) acts at this history.
+        Default: player 0 acts first in every round.
+        Override for games where preflop ordering differs.
+        """
+        return len(history.split("//")[-1]) % 2
+
     def get_legal_actions(self, history: str) -> list[str]:
         """
         Get legal actions at this point.

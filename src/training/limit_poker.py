@@ -1,5 +1,7 @@
 import random
 from src.training.base import PokerGameRules
+from src.utils.cards import rank_reverse_map, suit_reverse_map
+from src.utils.equity import preflop_key, mc_win_prob, river_win_prob, equity_bucket, load_preflop_equity
 from phevaluator.evaluator import evaluate_cards
 
 class LimitPokerRules(PokerGameRules):
@@ -9,14 +11,11 @@ class LimitPokerRules(PokerGameRules):
     F = Fold, P = Pass/Check, C = Call, B = Bet, R = Raise
     """
 
-    rank_map = {
-        0: "2", 1: "3", 2: "4", 3: "5", 4: "6", 5: "7", 6: "8", 7: "9",
-        8: "T", 9: "J", 10: "Q", 11: "K", 12: "A",
-    }
+    NUM_BUCKETS = 8
+    MC_SAMPLES = 100  # rollouts per node for flop/turn equity estimation
 
-    suit_map = {
-        0: "c", 1: "d", 2: "h", 3: "s",
-    }
+    def __init__(self):
+        self._preflop_equity = load_preflop_equity()
 
 
     def deal_cards(self) -> tuple:
@@ -60,7 +59,7 @@ class LimitPokerRules(PokerGameRules):
         for r_idx, r in enumerate(rounds):
             if r.endswith("F"):
                 if r_idx == 0:
-                    folder = (len(r) - 1 + 1) % 2
+                    folder = len(r) % 2  # player 1 acts first preflop
                 else:
                     folder = (len(r) - 1) % 2
                 return -commitments[0] if folder == 0 else commitments[1]
@@ -68,9 +67,10 @@ class LimitPokerRules(PokerGameRules):
         rank0 = self._evaluate(cards0, com_cards)
         rank1 = self._evaluate(cards1, com_cards)
 
-        if rank0 > rank1:
+        # phevaluator: lower rank = stronger hand
+        if rank0 < rank1:
             return commitments[1]
-        elif rank0 < rank1:
+        elif rank0 > rank1:
             return -commitments[0]
         else:
             return 0
@@ -90,7 +90,7 @@ class LimitPokerRules(PokerGameRules):
 
             for action_idx, action in enumerate(round_history):
                 if round_idx == 0:
-                    player = (action_idx + 1) % 2
+                    player = (action_idx + 1) % 2  # player 1 acts first preflop
                 else:
                     player = action_idx % 2
 
@@ -108,34 +108,52 @@ class LimitPokerRules(PokerGameRules):
 
         return commitments
 
-    def get_info_set_string(self, player_card: int, history: str, com_cards: tuple[int]) -> str:
-        card_names = {0: 'J', 1: 'Q', 2: 'K'}
-        rounds = history.count('//')
-        if rounds == 0:
-            return f"{card_names[player_card//2]}:{history}"
-        return f"{card_names[player_card//2]}|{card_names[com_cards[0]//2]}:{history}"
+    def get_info_set_string(self, player_card: tuple, history: str, com_cards: tuple) -> str:
+        street = history.count('//')
+        community = com_cards[0] if com_cards[0] is not None else ()
+
+        if street == 0:
+            win_prob = self._preflop_equity[preflop_key(*player_card)]
+        elif street == 1:
+            win_prob = mc_win_prob(player_card, community[:3], self.MC_SAMPLES)
+        elif street == 2:
+            win_prob = mc_win_prob(player_card, community[:4], self.MC_SAMPLES)
+        else:
+            win_prob = river_win_prob(player_card, community[:5])
+
+        bucket = equity_bucket(win_prob, self.NUM_BUCKETS)
+        return f"b{bucket}:{history}"
+
+    def get_acting_player(self, history: str) -> int:
+        rounds = history.split("//")
+        current_round_len = len(rounds[-1])
+        if len(rounds) == 1:
+            return (current_round_len + 1) % 2  # player 1 (BTN/SB) acts first preflop
+        return current_round_len % 2  # player 0 (BB) acts first all other streets
 
     def get_legal_actions(self, history: str) -> list[str]:
         rounds = history.split("//")
-        r1 = rounds[0]
-        r2 = rounds[1] if len(rounds) > 1 else None
-
-        # Between rounds: transition to round 2 by appending separator
-        if r2 is None and self._round_terminal(r1):
-            return ["//"]
-
         current_round = rounds[-1]
+        is_preflop = len(rounds) == 1
+
+        # Transition to next street if current round is complete and game isn't over
+        if len(rounds) < 4 and self._is_round_complete(current_round, is_preflop=is_preflop):
+            return ["//"]
 
         if current_round == "":
             return ['P', 'B']
 
         prev = current_round[-1]
+        raise_count = current_round.count('R')
+
         if prev == 'P':
             return ['P', 'B']
         elif prev == 'B':
+            if raise_count >= 3:
+                return ['F', 'C']
             return ['F', 'C', 'R']
         elif prev == 'R':
-            if len(current_round) >= 2 and current_round[-2] == 'R':
+            if raise_count >= 3:
                 return ['F', 'C']
             return ['F', 'C', 'R']
         return []
@@ -143,5 +161,10 @@ class LimitPokerRules(PokerGameRules):
     def get_num_actions(self) -> int:
         return 5
 
-    def _get_card(self, card: int):
-        return f"{rank_map[card // 4]}{suit_map[card % 4]}"
+    def _evaluate(self, hole_cards: tuple, com_cards: tuple) -> int:
+        community = com_cards[0]
+        cards = [self._get_card(c) for c in hole_cards] + [self._get_card(c) for c in community]
+        return evaluate_cards(*cards)
+
+    def _get_card(self, card: int) -> str:
+        return f"{rank_reverse_map[card // 4]}{suit_reverse_map[card % 4]}"
