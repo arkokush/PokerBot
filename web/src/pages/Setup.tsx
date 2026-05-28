@@ -15,7 +15,8 @@ const variantDefaults: Record<string, { smallBlind: number; bigBlind: number; st
 const botOptions = [
   { value: 'random', label: 'Random', desc: 'Picks actions uniformly at random' },
   { value: 'always_call', label: 'Always Call', desc: 'Never folds, never raises' },
-  { value: 'mccfr', label: 'MCCFR', desc: 'Pre-trained Monte Carlo CFR strategy' },
+  { value: 'mccfr_8', label: 'MCCFR-8', desc: 'Pre-trained Monte Carlo CFR strategy (8 buckets)' },
+  { value: 'mccfr_15', label: 'MCCFR-15', desc: 'Pre-trained Monte Carlo CFR strategy (15 buckets)' },
 ]
 
 export function Setup() {

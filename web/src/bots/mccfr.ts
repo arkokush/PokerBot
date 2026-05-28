@@ -1,10 +1,15 @@
 import type { BotStrategy } from './types'
 import type { GameState, PlayerAction, Action, Card } from '../engines/types'
+import { mcWinProb, riverWinProb } from '../engines/equity'
+
+// Must match src/training/limit_poker.py MC_SAMPLES.
+const MCCFR_ROLLOUTS = 100
 
 // Strategy tables loaded from pre-trained JSON files
 let kuhnStrategy: Record<string, { actions: string[]; probs: number[] }> | null = null
 let leducStrategy: Record<string, { actions: string[]; probs: number[] }> | null = null
-let limitStrategy: Record<string, { actions: string[]; probs: number[] }> | null = null
+let limitStrategy8: Record<string, { actions: string[]; probs: number[] }> | null = null
+let limitStrategy15: Record<string, { actions: string[]; probs: number[] }> | null = null
 let preflopEquity: Record<string, number> | null = null
 
 let loadPromise: Promise<void> | null = null
@@ -23,7 +28,19 @@ function loadStrategies(): Promise<void> {
   loadPromise = Promise.all([
     fetch(`${base}models/kuhn_strategy.json`).then((r) => r.json()).then((d) => { kuhnStrategy = d }),
     fetch(`${base}models/leduc_strategy.json`).then((r) => r.json()).then((d) => { leducStrategy = d }),
-    fetch(`${base}models/limit_strategy.json`).then((r) => r.json()).then((d) => { limitStrategy = d }),
+    fetch(`${base}models/MCCFR-8.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) {
+          limitStrategy8 = d
+          return null
+        }
+        return fetch(`${base}models/limit_strategy.json`).then((fallback) => fallback.json())
+      })
+      .then((fallbackData) => {
+        if (fallbackData) limitStrategy8 = fallbackData
+      }),
+    fetch(`${base}models/MCCFR-15.json`).then((r) => (r.ok ? r.json() : null)).then((d) => { limitStrategy15 = d }),
     fetch(`${base}models/preflop_equity.json`).then((r) => r.json()).then((d) => { preflopEquity = d }),
   ]).then(() => {})
   return loadPromise
@@ -46,9 +63,9 @@ function leducInfoKey(state: GameState): string {
   return `${holeCard}:${history}`
 }
 
-function limitInfoKey(state: GameState): string {
+function limitInfoKey(state: GameState, nBuckets: number): string {
   const me = state.players[state.currentPlayerIndex]
-  const bucket = computeEquityBucket(me.holeCards, state.communityCards, state.street)
+  const bucket = computeEquityBucket(me.holeCards, state.communityCards, state.street, nBuckets)
   const history = buildActionHistory(state, 'limit_holdem')
   return `b${bucket}:${history}`
 }
@@ -146,76 +163,32 @@ function preflopKey(card0: Card, card1: Card): string {
   return `${highLabel}${lowLabel}${suited}`  // "AKs", "AKo"
 }
 
-function equityBucket(winProb: number, nBuckets: number = 8): number {
+function equityBucket(winProb: number, nBuckets: number): number {
   return Math.min(Math.floor(winProb * nBuckets), nBuckets - 1)
 }
 
-// Simple hand strength estimation for post-flop
-// Uses a rough heuristic based on hand evaluation
-function computeEquityBucket(holeCards: Card[], communityCards: Card[], street: string): number {
+// Match Python training (src/training/limit_poker.py): preflop table, flop/turn MC rollouts, exact river.
+function computeEquityBucket(holeCards: Card[], communityCards: Card[], street: string, nBuckets: number): number {
   if (street === 'preflop' || communityCards.length === 0) {
-    if (!preflopEquity || holeCards.length < 2) return 4 // middle bucket fallback
-    const key = preflopKey(holeCards[0], holeCards[1])
-    const equity = preflopEquity[key] ?? 0.5
-    return equityBucket(equity)
-  }
-
-  // Post-flop: simple hand strength estimation
-  // Score the hand and normalize to a probability-like value
-  const allCards = [...holeCards, ...communityCards]
-  const score = simpleHandStrength(allCards)
-  // Normalize score to [0, 1] range — max possible is ~8000 (straight flush), typical high card is ~100
-  const normalized = Math.min(score / 5000, 1.0)
-  return equityBucket(normalized)
-}
-
-// Simple hand strength scorer (returns a numeric score)
-function simpleHandStrength(cards: Card[]): number {
-  const ranks = cards.map((c) => RANK_VALUES[c.rank])
-  const suits = cards.map((c) => c.suit)
-
-  // Count ranks
-  const rankCounts: Record<number, number> = {}
-  for (const r of ranks) {
-    rankCounts[r] = (rankCounts[r] || 0) + 1
-  }
-
-  // Count suits
-  const suitCounts: Record<string, number> = {}
-  for (const s of suits) {
-    suitCounts[s] = (suitCounts[s] || 0) + 1
-  }
-
-  const counts = Object.values(rankCounts).sort((a, b) => b - a)
-  const hasFlush = Object.values(suitCounts).some((c) => c >= 5)
-  const uniqueRanks = Object.keys(rankCounts).map(Number).sort((a, b) => b - a)
-
-  // Check for straight
-  let hasStraight = false
-  let straightHigh = 0
-  const sortedUnique = [...new Set(ranks)].sort((a, b) => b - a)
-  // Add low ace
-  if (sortedUnique.includes(12)) sortedUnique.push(-1)
-  for (let i = 0; i <= sortedUnique.length - 5; i++) {
-    if (sortedUnique[i] - sortedUnique[i + 4] === 4) {
-      hasStraight = true
-      straightHigh = sortedUnique[i]
-      break
+    if (!preflopEquity || holeCards.length < 2) {
+      throw new Error('mccfr: preflopEquity table not loaded yet')
     }
+    const key = preflopKey(holeCards[0], holeCards[1])
+    const equity = preflopEquity[key]
+    if (equity === undefined) throw new Error(`mccfr: missing preflop equity for ${key}`)
+    return equityBucket(equity, nBuckets)
   }
 
-  const highCard = uniqueRanks[0]
-
-  // Score: hand rank * 1000 + kicker value
-  if (hasStraight && hasFlush) return 8000 + straightHigh
-  if (counts[0] === 4) return 7000 + highCard
-  if (counts[0] === 3 && counts[1] >= 2) return 6000 + highCard
-  if (hasFlush) return 5000 + highCard
-  if (hasStraight) return 4000 + straightHigh
-  if (counts[0] === 3) return 3000 + highCard
-  if (counts[0] === 2 && counts[1] === 2) return 2000 + highCard
-  if (counts[0] === 2) return 1000 + highCard
-  return highCard
+  const nBoard = communityCards.length
+  let winProb: number
+  if (nBoard === 3 || nBoard === 4) {
+    winProb = mcWinProb(holeCards, communityCards, MCCFR_ROLLOUTS)
+  } else if (nBoard === 5) {
+    winProb = riverWinProb(holeCards, communityCards)
+  } else {
+    throw new Error(`mccfr: unexpected board size ${nBoard}`)
+  }
+  return equityBucket(winProb, nBuckets)
 }
 
 // ---- Sample from strategy distribution ----
@@ -246,40 +219,55 @@ function randomFallback(state: GameState): PlayerAction {
 
 // ---- The bot ----
 
-export const mccfrBot: BotStrategy = {
-  name: 'MCCFR',
-  description: 'Uses pre-trained Monte Carlo CFR strategies',
+function decideWithStrategies(
+  state: GameState,
+  limitStrategy: Record<string, { actions: string[]; probs: number[] }> | null,
+  nBuckets: number,
+): PlayerAction {
+  const { variant } = state
 
+  if (variant === 'kuhn') {
+    if (!kuhnStrategy) return randomFallback(state)
+    const key = `${state.players[state.currentPlayerIndex].holeCards[0].rank}:${buildKuhnActionHistory(state)}`
+    const entry = kuhnStrategy[key]
+    if (!entry) return randomFallback(state)
+    const label = sampleAction(entry.probs, entry.actions)
+    return kuhnLabelToAction(label, state)
+  }
+
+  if (variant === 'leduc') {
+    if (!leducStrategy) return randomFallback(state)
+    const key = leducInfoKey(state)
+    const entry = leducStrategy[key]
+    if (!entry) return randomFallback(state)
+    const label = sampleAction(entry.probs, entry.actions)
+    return labelToAction(label, state)
+  }
+
+  if (variant === 'limit_holdem') {
+    if (!limitStrategy) return randomFallback(state)
+    const key = limitInfoKey(state, nBuckets)
+    const entry = limitStrategy[key]
+    if (!entry) return randomFallback(state)
+    const label = sampleAction(entry.probs, entry.actions)
+    return labelToAction(label, state)
+  }
+
+  return randomFallback(state)
+}
+
+export const mccfr8Bot: BotStrategy = {
+  name: 'MCCFR-8',
+  description: 'Pre-trained Monte Carlo CFR strategy (8 buckets)',
   decide(state: GameState): PlayerAction {
-    const { variant } = state
+    return decideWithStrategies(state, limitStrategy8, 8)
+  },
+}
 
-    if (variant === 'kuhn') {
-      if (!kuhnStrategy) return randomFallback(state)
-      const key = `${state.players[state.currentPlayerIndex].holeCards[0].rank}:${buildKuhnActionHistory(state)}`
-      const entry = kuhnStrategy[key]
-      if (!entry) return randomFallback(state)
-      const label = sampleAction(entry.probs, entry.actions)
-      return kuhnLabelToAction(label, state)
-    }
-
-    if (variant === 'leduc') {
-      if (!leducStrategy) return randomFallback(state)
-      const key = leducInfoKey(state)
-      const entry = leducStrategy[key]
-      if (!entry) return randomFallback(state)
-      const label = sampleAction(entry.probs, entry.actions)
-      return labelToAction(label, state)
-    }
-
-    if (variant === 'limit_holdem') {
-      if (!limitStrategy) return randomFallback(state)
-      const key = limitInfoKey(state)
-      const entry = limitStrategy[key]
-      if (!entry) return randomFallback(state)
-      const label = sampleAction(entry.probs, entry.actions)
-      return labelToAction(label, state)
-    }
-
-    return randomFallback(state)
+export const mccfr15Bot: BotStrategy = {
+  name: 'MCCFR-15',
+  description: 'Pre-trained Monte Carlo CFR strategy (15 buckets)',
+  decide(state: GameState): PlayerAction {
+    return decideWithStrategies(state, limitStrategy15, 15)
   },
 }
