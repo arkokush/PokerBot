@@ -1,14 +1,6 @@
 import type { Card, Rank, Suit, GameConfig, GameEngine, GameState, Player, PlayerAction, Action, Street } from './types'
-
-function mulberry32(seed: number): () => number {
-  let s = seed | 0
-  return () => {
-    s = (s + 0x6d2b79f5) | 0
-    let t = Math.imul(s ^ (s >>> 15), 1 | s)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
+import { mulberry32 } from './rng'
+import { encodeCards, eval7 } from './hand_eval'
 
 function shuffle<T>(arr: T[], rng: () => number): T[] {
   const result = [...arr]
@@ -30,129 +22,6 @@ function buildDeck(): Card[] {
     }
   }
   return deck
-}
-
-const RANK_VALUE: Record<string, number> = {}
-RANKS.forEach((r, i) => { RANK_VALUE[r] = i })
-
-// ---------- Hand evaluation ----------
-
-const HandRank = {
-  HighCard: 0,
-  Pair: 1,
-  TwoPair: 2,
-  ThreeOfAKind: 3,
-  Straight: 4,
-  Flush: 5,
-  FullHouse: 6,
-  FourOfAKind: 7,
-  StraightFlush: 8,
-} as const
-
-type HandRankValue = (typeof HandRank)[keyof typeof HandRank]
-
-interface HandScore {
-  rank: HandRankValue
-  tiebreakers: number[] // descending importance
-}
-
-function compareScores(a: HandScore, b: HandScore): number {
-  if (a.rank !== b.rank) return a.rank - b.rank
-  for (let i = 0; i < Math.max(a.tiebreakers.length, b.tiebreakers.length); i++) {
-    const av = a.tiebreakers[i] ?? 0
-    const bv = b.tiebreakers[i] ?? 0
-    if (av !== bv) return av - bv
-  }
-  return 0
-}
-
-function evaluateBest5(cards: Card[]): HandScore {
-  // Generate all C(7,5) = 21 combinations
-  let best: HandScore | null = null
-  const n = cards.length
-  for (let i = 0; i < n - 4; i++) {
-    for (let j = i + 1; j < n - 3; j++) {
-      for (let k = j + 1; k < n - 2; k++) {
-        for (let l = k + 1; l < n - 1; l++) {
-          for (let m = l + 1; m < n; m++) {
-            const hand = [cards[i], cards[j], cards[k], cards[l], cards[m]]
-            const score = evaluate5(hand)
-            if (best === null || compareScores(score, best) > 0) {
-              best = score
-            }
-          }
-        }
-      }
-    }
-  }
-  return best!
-}
-
-function evaluate5(cards: Card[]): HandScore {
-  const values = cards.map(c => RANK_VALUE[c.rank]).sort((a, b) => b - a)
-  const suits = cards.map(c => c.suit)
-
-  const isFlush = suits.every(s => s === suits[0])
-
-  // Check straight
-  let isStraight = false
-  let straightHigh = 0
-  // Normal straight
-  if (values[0] - values[4] === 4 && new Set(values).size === 5) {
-    isStraight = true
-    straightHigh = values[0]
-  }
-  // Wheel: A-2-3-4-5 (A=12, 5=3, 4=2, 3=1, 2=0)
-  if (!isStraight) {
-    const sorted = [...values].sort((a, b) => a - b)
-    if (sorted[0] === 0 && sorted[1] === 1 && sorted[2] === 2 && sorted[3] === 3 && sorted[4] === 12) {
-      isStraight = true
-      straightHigh = 3 // 5-high straight
-    }
-  }
-
-  // Count ranks
-  const counts = new Map<number, number>()
-  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1)
-  const groups = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])
-
-  if (isStraight && isFlush) {
-    return { rank: HandRank.StraightFlush, tiebreakers: [straightHigh] }
-  }
-
-  if (groups[0][1] === 4) {
-    return { rank: HandRank.FourOfAKind, tiebreakers: [groups[0][0], groups[1][0]] }
-  }
-
-  if (groups[0][1] === 3 && groups[1][1] === 2) {
-    return { rank: HandRank.FullHouse, tiebreakers: [groups[0][0], groups[1][0]] }
-  }
-
-  if (isFlush) {
-    return { rank: HandRank.Flush, tiebreakers: values }
-  }
-
-  if (isStraight) {
-    return { rank: HandRank.Straight, tiebreakers: [straightHigh] }
-  }
-
-  if (groups[0][1] === 3) {
-    const kickers = groups.slice(1).map(g => g[0]).sort((a, b) => b - a)
-    return { rank: HandRank.ThreeOfAKind, tiebreakers: [groups[0][0], ...kickers] }
-  }
-
-  if (groups[0][1] === 2 && groups[1][1] === 2) {
-    const pairs = [groups[0][0], groups[1][0]].sort((a, b) => b - a)
-    const kicker = groups[2][0]
-    return { rank: HandRank.TwoPair, tiebreakers: [...pairs, kicker] }
-  }
-
-  if (groups[0][1] === 2) {
-    const kickers = groups.slice(1).map(g => g[0]).sort((a, b) => b - a)
-    return { rank: HandRank.Pair, tiebreakers: [groups[0][0], ...kickers] }
-  }
-
-  return { rank: HandRank.HighCard, tiebreakers: values }
 }
 
 // ---------- Engine state ----------
@@ -432,22 +301,18 @@ function resolveShowdown(state: GameState): GameState {
     return state
   }
 
-  const cards0 = [...p0.holeCards, ...state.communityCards]
-  const cards1 = [...p1.holeCards, ...state.communityCards]
-  const score0 = evaluateBest5(cards0)
-  const score1 = evaluateBest5(cards1)
-  const cmp = compareScores(score0, score1)
-
-  if (cmp > 0) {
+  const v0 = eval7(encodeCards([...p0.holeCards, ...state.communityCards]))
+  const v1 = eval7(encodeCards([...p1.holeCards, ...state.communityCards]))
+  // Lower value = stronger hand.
+  if (v0 < v1) {
     state.winner = p0.id
     state.winAmount = state.pot
     p0.stack += state.pot
-  } else if (cmp < 0) {
+  } else if (v1 < v0) {
     state.winner = p1.id
     state.winAmount = state.pot
     p1.stack += state.pot
   } else {
-    // Split pot
     state.winner = null
     state.winAmount = state.pot
     const half = state.pot / 2
