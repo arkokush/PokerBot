@@ -12,10 +12,22 @@ class MCCFR:
     - Opponent: sample one action according to current strategy
     """
 
-    def __init__(self, game: PokerGameRules):
+    def __init__(
+        self,
+        game: PokerGameRules,
+        alpha: float = float("inf"),
+        beta: float = float("inf"),
+        gamma: float = float("inf"),
+        clip: bool = False,
+    ):
+        # Defaults (alpha=beta=gamma=inf, clip=False) recover plain MCCFR.
         self.game = game
         self.info_sets: Dict[str, InformationSet] = {}
         self.t = 0
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.clip = clip
 
     def get_info_set(self, key: str, num_actions: int) -> InformationSet:
         if key not in self.info_sets:
@@ -62,9 +74,13 @@ class MCCFR:
         strategy = info_set.get_strategy()
 
         if player == traversing_player:
-            # Update average strategy (linear weighting by iteration)
-            for i in range(len(actions)):
-                info_set.strategy_sum[i] += self.t * strategy[i]
+            if self.gamma == float("inf"):
+                for i in range(len(actions)):
+                    info_set.strategy_sum[i] += self.t * strategy[i]
+            else:
+                w = (self.t / (self.t + 1)) ** self.gamma
+                for i in range(len(actions)):
+                    info_set.strategy_sum[i] = info_set.strategy_sum[i] * w + strategy[i]
 
             action_utils = [0.0] * len(actions)
             node_util = 0.0
@@ -75,9 +91,24 @@ class MCCFR:
                 )
                 node_util += strategy[i] * action_utils[i]
 
-            # Standard regret update — no decay
+            t = self.t
+            if self.alpha == float("inf"):
+                pos_discount = 1.0
+            else:
+                pos_discount = (t ** self.alpha) / (t ** self.alpha + 1)
+            if self.beta == float("inf"):
+                neg_discount = 1.0
+            else:
+                neg_discount = (t ** self.beta) / (t ** self.beta + 1)
+
             for i in range(len(actions)):
-                info_set.regret_sum[i] += action_utils[i] - node_util
+                new_regret = action_utils[i] - node_util
+                old = info_set.regret_sum[i]
+                discounted = old * (pos_discount if old > 0 else neg_discount)
+                updated = discounted + new_regret
+                if self.clip:
+                    updated = max(0.0, updated)
+                info_set.regret_sum[i] = updated
 
             return node_util
 
