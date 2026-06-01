@@ -2,6 +2,7 @@ import { motion } from 'framer-motion'
 import { Seat } from './Seat'
 import { CardComponent } from '../ui/CardComponent'
 import { ChipStack } from '../ui/ChipStack'
+import { describeHand } from '../../engines/hand_eval'
 import type { GameState, PlayMode, PlayerAction } from '../../engines/types'
 
 interface Props {
@@ -37,6 +38,14 @@ export function PokerTable({ state, lastActions, mode, pvpActivePlayer }: Props)
     return false
   }
 
+  function handDescription(playerIndex: number): string | null {
+    if (variant === 'kuhn') return null
+    const player = players[playerIndex]
+    if (!player || player.holeCards.length === 0) return null
+    if (!shouldShowCards(playerIndex)) return null
+    return describeHand([...player.holeCards, ...communityCards]) || null
+  }
+
   return (
     <div className="relative flex flex-col items-center justify-center h-full min-h-[480px]">
       {/* Felt background */}
@@ -65,6 +74,7 @@ export function PokerTable({ state, lastActions, mode, pvpActivePlayer }: Props)
               showCards={shouldShowCards(1)}
               position="top"
               lastAction={lastActions[1]}
+              handDescription={handDescription(1)}
             />
           )}
         </div>
@@ -133,6 +143,7 @@ export function PokerTable({ state, lastActions, mode, pvpActivePlayer }: Props)
               showCards={shouldShowCards(0)}
               position="bottom"
               lastAction={lastActions[0]}
+              handDescription={handDescription(0)}
             />
           )}
         </div>

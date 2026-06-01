@@ -13,6 +13,7 @@ interface Props {
   showCards: boolean
   position: 'top' | 'bottom'
   lastAction?: { action: PlayerAction } | null
+  handDescription?: string | null
 }
 
 function actionToLabel(a: PlayerAction): { text: string; color: 'purple' | 'green' | 'red' } {
@@ -25,7 +26,7 @@ function actionToLabel(a: PlayerAction): { text: string; color: 'purple' | 'gree
   }
 }
 
-export const Seat = memo(function Seat({ player, isActive, isWinner, showCards, position, lastAction }: Props) {
+export const Seat = memo(function Seat({ player, isActive, isWinner, showCards, position, lastAction, handDescription }: Props) {
   const [displayAction, setDisplayAction] = useState<{ text: string; color: 'purple' | 'green' | 'red' } | null>(null)
 
   useEffect(() => {
@@ -70,6 +71,21 @@ export const Seat = memo(function Seat({ player, isActive, isWinner, showCards, 
         ))}
         {player.holeCards.length === 0 && !player.folded && (
           <div className="w-14 h-20 rounded-lg border border-border-subtle/30" />
+        )}
+      </div>
+
+      {/* Hand description — fixed height to prevent layout shift */}
+      <div className="min-h-[22px] flex items-center justify-center">
+        {showCards && handDescription && (
+          <motion.div
+            key={handDescription}
+            initial={{ opacity: 0, y: -2 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="px-2.5 py-0.5 rounded-full bg-bg-overlay/80 border border-border-subtle text-text-secondary text-xs font-medium whitespace-nowrap"
+          >
+            {handDescription}
+          </motion.div>
         )}
       </div>
 

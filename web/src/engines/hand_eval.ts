@@ -147,3 +147,108 @@ export function evalHand(cards: Card[]): number {
   }
   throw new Error(`evalHand: unsupported card count ${cards.length}`)
 }
+
+const RANK_NAMES: Record<Rank, string> = {
+  '2': 'Two', '3': 'Three', '4': 'Four', '5': 'Five', '6': 'Six',
+  '7': 'Seven', '8': 'Eight', '9': 'Nine', 'T': 'Ten',
+  'J': 'Jack', 'Q': 'Queen', 'K': 'King', 'A': 'Ace',
+}
+
+const RANK_NAMES_PLURAL: Record<Rank, string> = {
+  '2': 'Twos', '3': 'Threes', '4': 'Fours', '5': 'Fives', '6': 'Sixes',
+  '7': 'Sevens', '8': 'Eights', '9': 'Nines', 'T': 'Tens',
+  'J': 'Jacks', 'Q': 'Queens', 'K': 'Kings', 'A': 'Aces',
+}
+
+function rankIdxName(i: number): string {
+  return RANK_NAMES[RANK_LABELS[i]]
+}
+
+function rankIdxPlural(i: number): string {
+  return RANK_NAMES_PLURAL[RANK_LABELS[i]]
+}
+
+function describe5Encoded(c0: number, c1: number, c2: number, c3: number, c4: number): string {
+  const ranks = [c0 >> 2, c1 >> 2, c2 >> 2, c3 >> 2, c4 >> 2].sort((a, b) => b - a)
+  const suits = [c0 & 3, c1 & 3, c2 & 3, c3 & 3, c4 & 3]
+  const isFlush = suits.every((s) => s === suits[0])
+
+  const counts = new Array<number>(13).fill(0)
+  for (const r of ranks) counts[r]++
+
+  let quadR = -1, tripR = -1, pair1R = -1, pair2R = -1
+  for (let r = 12; r >= 0; r--) {
+    if (counts[r] === 4) quadR = r
+    else if (counts[r] === 3) tripR = r
+    else if (counts[r] === 2) {
+      if (pair1R < 0) pair1R = r
+      else pair2R = r
+    }
+  }
+
+  const rankBits = ranks.reduce((b, r) => b | (1 << r), 0)
+  const sHigh = straightHighFromBits(rankBits)
+  const isStraight = sHigh >= 0
+
+  if (isStraight && isFlush) {
+    if (sHigh === 12) return 'Royal Flush'
+    return `Straight Flush, ${rankIdxName(sHigh)} high`
+  }
+  if (quadR >= 0) return `Four of a Kind, ${rankIdxPlural(quadR)}`
+  if (tripR >= 0 && pair1R >= 0) return `Full House, ${rankIdxPlural(tripR)} over ${rankIdxPlural(pair1R)}`
+  if (isFlush) return `Flush, ${rankIdxName(ranks[0])} high`
+  if (isStraight) return `Straight, ${rankIdxName(sHigh)} high`
+  if (tripR >= 0) return `Three of a Kind, ${rankIdxPlural(tripR)}`
+  if (pair2R >= 0) return `Two Pair, ${rankIdxPlural(pair1R)} and ${rankIdxPlural(pair2R)}`
+  if (pair1R >= 0) return `Pair of ${rankIdxPlural(pair1R)}`
+  return `${rankIdxName(ranks[0])} High`
+}
+
+function describeBestEncoded(cards: number[]): string {
+  const n = cards.length
+  if (n === 5) return describe5Encoded(cards[0], cards[1], cards[2], cards[3], cards[4])
+  let bestScore = Infinity
+  let b0 = cards[0], b1 = cards[1], b2 = cards[2], b3 = cards[3], b4 = cards[4]
+  for (let i0 = 0; i0 < n - 4; i0++)
+    for (let i1 = i0 + 1; i1 < n - 3; i1++)
+      for (let i2 = i1 + 1; i2 < n - 2; i2++)
+        for (let i3 = i2 + 1; i3 < n - 1; i3++)
+          for (let i4 = i3 + 1; i4 < n; i4++) {
+            const score = eval5(cards[i0], cards[i1], cards[i2], cards[i3], cards[i4])
+            if (score < bestScore) {
+              bestScore = score
+              b0 = cards[i0]; b1 = cards[i1]; b2 = cards[i2]; b3 = cards[i3]; b4 = cards[i4]
+            }
+          }
+  return describe5Encoded(b0, b1, b2, b3, b4)
+}
+
+export function describeHand(cards: Card[]): string {
+  if (cards.length === 0) return ''
+  if (cards.length === 1) {
+    return `${RANK_NAMES[cards[0].rank]} High`
+  }
+  if (cards.length === 2) {
+    if (cards[0].rank === cards[1].rank) {
+      return `Pair of ${RANK_NAMES_PLURAL[cards[0].rank]}`
+    }
+    const r0 = RANK_INDEX[cards[0].rank]
+    const r1 = RANK_INDEX[cards[1].rank]
+    const high = r0 > r1 ? cards[0].rank : cards[1].rank
+    return `${RANK_NAMES[high]} High`
+  }
+  if (cards.length >= 5) {
+    return describeBestEncoded(encodeCards(cards))
+  }
+  // 3-4 cards: fall back to pair/high-card check
+  const counts: Record<string, number> = {}
+  let highIdx = -1
+  for (const c of cards) {
+    counts[c.rank] = (counts[c.rank] || 0) + 1
+    if (RANK_INDEX[c.rank] > highIdx) highIdx = RANK_INDEX[c.rank]
+  }
+  for (const rank of Object.keys(counts)) {
+    if (counts[rank] >= 2) return `Pair of ${RANK_NAMES_PLURAL[rank as Rank]}`
+  }
+  return `${RANK_NAMES[RANK_LABELS[highIdx]]} High`
+}
