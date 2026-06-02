@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useUIStore } from '../stores/uiStore'
 import type { GameVariant, PlayMode } from '../engines/types'
-import { Spade, Users, Bot, Eye, Sun, Moon } from 'lucide-react'
+import { Spade, Users, Bot, Eye, Sun, Moon, Brain } from 'lucide-react'
 
 const variants: { id: GameVariant; name: string; description: string; cards: string }[] = [
   {
@@ -39,14 +39,24 @@ export function Lobby() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
-      {/* Light mode toggle */}
-      <button
-        onClick={toggleLightMode}
-        className="absolute top-4 right-4 z-20 p-2 rounded-lg hover:bg-bg-elevated text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-        title={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
-      >
-        {lightMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-      </button>
+      {/* Top right controls */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-1">
+        <button
+          onClick={() => navigate('/what-is-cfr')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-bg-elevated text-text-secondary hover:text-text-primary transition-colors cursor-pointer text-sm"
+          title="Learn about CFR"
+        >
+          <Brain className="w-4 h-4" />
+          <span>What is CFR?</span>
+        </button>
+        <button
+          onClick={toggleLightMode}
+          className="p-2 rounded-lg hover:bg-bg-elevated text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+          title={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
+        >
+          {lightMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+        </button>
+      </div>
 
       {/* Animated gradient background */}
       <div

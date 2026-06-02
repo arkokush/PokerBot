@@ -236,7 +236,14 @@ export function Play() {
       {/* Main layout */}
       <div className="flex flex-1 min-h-0">
         {/* Left Pane */}
-        <LeftPane players={state.players} handHistory={session.handHistory} config={session.config} />
+        <LeftPane
+          players={state.players}
+          handHistory={session.handHistory}
+          config={session.config}
+          state={state}
+          mode={session.mode}
+          pvpActivePlayer={pvpActivePlayer}
+        />
 
         {/* Center */}
         <div className="flex-1 flex flex-col min-h-0 relative">
