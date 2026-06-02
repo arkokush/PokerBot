@@ -1,5 +1,8 @@
+import { useRef } from 'react'
 import { User, Bot, TrendingUp, TrendingDown, Minus } from 'lucide-react'
-import type { Player, GameConfig } from '../../engines/types'
+import type { Player, GameState, GameConfig, PlayMode } from '../../engines/types'
+import { probeStrategy, type StrategyProbe } from '../../bots/mccfr'
+import { InfoSetProbe } from './InfoSetProbe'
 
 interface HandRecord {
   winner: number | null
@@ -11,9 +14,41 @@ interface Props {
   players: Player[]
   handHistory: HandRecord[]
   config: GameConfig
+  state?: GameState
+  mode?: PlayMode
+  pvpActivePlayer?: number
 }
 
-export function LeftPane({ players, handHistory, config }: Props) {
+function shouldShowProbeFor(
+  playerIndex: number,
+  state: GameState | undefined,
+  mode: PlayMode | undefined,
+  pvpActivePlayer: number,
+): boolean {
+  if (!state || !mode) return false
+  const player = state.players[playerIndex]
+  if (!player || !player.isBot) return false
+  if (player.folded) return false
+  // Mirror PokerTable.shouldShowCards — only expose probe when cards are visible
+  if (state.isHandOver) return true
+  if (mode === 'bvb') return true
+  if (mode === 'pvb') return false  // bot cards hidden during play; reveal at showdown only
+  if (mode === 'pvp') return playerIndex === pvpActivePlayer
+  return false
+}
+
+export function LeftPane({ players, handHistory, config, state, mode, pvpActivePlayer = 0 }: Props) {
+  // Cache the most recent valid probe per bot so the thought-process box
+  // stays visible even when it isn't that bot's turn. Reset on each new hand.
+  const probeCacheRef = useRef<{ handNumber: number; probes: Record<number, StrategyProbe> }>({
+    handNumber: -1,
+    probes: {},
+  })
+  const handNumber = state?.handNumber ?? -1
+  if (probeCacheRef.current.handNumber !== handNumber) {
+    probeCacheRef.current = { handNumber, probes: {} }
+  }
+
   const getWinRate = (playerId: number) => {
     if (handHistory.length === 0) return 0
     const wins = handHistory.filter((h) => h.winner === playerId).length
@@ -88,6 +123,17 @@ export function LeftPane({ players, handHistory, config }: Props) {
                 <p className="font-mono text-sm font-semibold text-text-primary">{handHistory.length}</p>
               </div>
             </div>
+
+            {shouldShowProbeFor(player.id, state, mode, pvpActivePlayer) && (() => {
+              const live = probeStrategy(state!, player.id)
+              if (live) {
+                probeCacheRef.current.probes[player.id] = live
+              }
+              const probe = live ?? probeCacheRef.current.probes[player.id]
+              if (!probe) return null
+              const isActing = !state!.isHandOver && state!.currentPlayerIndex === player.id
+              return <InfoSetProbe probe={probe} isActing={isActing} />
+            })()}
           </div>
         )
       })}

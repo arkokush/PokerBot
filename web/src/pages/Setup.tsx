@@ -12,12 +12,23 @@ const variantDefaults: Record<string, { smallBlind: number; bigBlind: number; st
   limit_holdem: { smallBlind: 1, bigBlind: 2, startingStack: 100 },
 }
 
-const botOptions = [
+const KUHN_LEDUC_BOTS = [
   { value: 'random', label: 'Random', desc: 'Picks actions uniformly at random' },
   { value: 'always_call', label: 'Always Call', desc: 'Never folds, never raises' },
-  { value: 'mccfr_8', label: 'MCCFR-8', desc: 'Pre-trained Monte Carlo CFR strategy (8 buckets)' },
-  { value: 'mccfr_15', label: 'MCCFR-15', desc: 'Pre-trained Monte Carlo CFR strategy (15 buckets)' },
+  { value: 'cfr', label: 'CFR', desc: 'Pre-trained CFR strategy' },
 ]
+
+const LIMIT_HOLDEM_BOTS = [
+  { value: 'random', label: 'Random', desc: 'Picks actions uniformly at random' },
+  { value: 'always_call', label: 'Always Call', desc: 'Never folds, never raises' },
+  { value: 'mccfr', label: 'MCCFR', desc: 'Pre-trained Monte Carlo CFR strategy' },
+  { value: 'mccfr_plus', label: 'MCCFR+', desc: 'Pre-trained MCCFR+ strategy' },
+  { value: 'dcfr', label: 'DCFR', desc: 'Pre-trained Discounted CFR strategy' },
+]
+
+function botOptionsForVariant(variant: string | null) {
+  return variant === 'limit_holdem' ? LIMIT_HOLDEM_BOTS : KUHN_LEDUC_BOTS
+}
 
 export function Setup() {
   const navigate = useNavigate()
@@ -28,8 +39,9 @@ export function Setup() {
 
   const [player1Name, setPlayer1Name] = useState('Player 1')
   const [player2Name, setPlayer2Name] = useState('Player 2')
-  const [bot1Strategy, setBot1Strategy] = useState('random')
-  const [bot2Strategy, setBot2Strategy] = useState('always_call')
+  const botOptions = botOptionsForVariant(selectedVariant)
+  const [bot1Strategy, setBot1Strategy] = useState(botOptions[0].value)
+  const [bot2Strategy, setBot2Strategy] = useState(botOptions[1].value)
   const [handLimit, setHandLimit] = useState(100)
   const [startingStack, setStartingStack] = useState(defaults.startingStack)
   const [smallBlind, setSmallBlind] = useState(defaults.smallBlind)
