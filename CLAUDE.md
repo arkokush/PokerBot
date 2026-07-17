@@ -1,41 +1,58 @@
 # PokerBot — Claude Code Context
 
 ## Project Overview
-Python-based poker bot using CFR (Counterfactual Regret Minimization) to train optimal strategies. Built in two phases:
-1. **Phase 1 (done):** Game engine — Texas Hold'em, Kuhn Poker, Leduc Poker
-2. **Phase 2 (next):** Bot intelligence — Monte Carlo CFR, strategy evaluation, opponent modeling
+Python-based poker bot using CFR (Counterfactual Regret Minimization) to train optimal strategies, plus a React web app for playing against the trained bots. Components:
+1. **Game engines (Python):** Kuhn Poker, Leduc Poker, NL Hold'em simulations
+2. **Bot intelligence (Python):** CFR, External-Sampling MCCFR (with CFR+ clipping and DCFR discounting), exact exploitability for Kuhn/Leduc
+3. **Web app (`web/`):** React + TypeScript + Vite; PvB / PvP / BvB play for Kuhn, Leduc, and heads-up Limit Hold'em, deployed to GitHub Pages from `docs/`
 
 ## Project Structure
 ```
 src/
-├── algorithms/      # CFR training algorithms (cfr.py, info_set.py)
-├── evaluation/      # Exploitability and head-to-head evaluation
-├── simulation/      # Game runners (kuhn_poker.py, leduc_poker.py, nl_holdem.py, limit_holdem.py)
-├── training/        # Training entry points (kuhn_poker.py, leduc_poker.py)
-└── utils/           # Cards, deck, player, agent base classes
+├── algorithms/      # cfr.py, mccfr.py, info_set.py, exploitability.py
+├── evaluation/      # thin re-export of algorithms.exploitability
+├── simulation/      # Playable engines (kuhn_poker.py, nl_holdem.py; leduc/limit are stubs)
+├── training/        # Game rules for training (kuhn_poker.py, leduc_poker.py, limit_poker.py)
+└── utils/           # cards.py, player.py, equity.py (bucketing + preflop table)
+web/
+├── src/engines/     # TS game engines (kuhn, leduc, limit_holdem, hand_eval, equity)
+├── src/bots/        # mccfr.ts (strategy lookup + info-set key builder), legality.ts
+├── src/stores/      # zustand game/ui stores
+└── public/models/   # trained strategy JSONs (source of truth; docs/ is the build output)
 ```
 
 ## Environment
-- Python 3.12, virtual environment at `.venv/`
-- Activate: `source .venv/bin/activate`
-- Dependencies: `phevaluator` (hand evaluation)
-- No test framework set up yet
+- Python venv at `.venv/` — activate: `source .venv/bin/activate`
+- `pip install -r requirements.txt` (phevaluator, pytest)
+- Web: `cd web && npm install`
 
-## Key Abstractions
-- `Agent` (utils/player.py): Abstract base — subclass and implement `decide(state)` to create a bot
-- `CFR` (algorithms/cfr.py): Generic CFR implementation
-- `InformationSet` (algorithms/info_set.py): Stores regret and strategy data per info set
-- Game simulations in `src/simulation/` are separate from training entry points in `src/training/`
+## Key Contracts (do not break)
+- **Info-set key grammar** is shared between `src/training/limit_poker.py` (docstring documents it) and `web/src/bots/mccfr.ts` (`buildActionHistory`). Preflop: F/C/R with BB option P (limp-check = "CP"); postflop: P/B/C/R/F; `//` appended at every round completion (start-of-street keys end in `//`). Limit keys are `b{bucket}:{history}` with 20 buckets.
+- `web/src/engines/__tests__/golden_keys.test.ts` enforces this contract — every key the web engine generates must exist in the exported model JSONs.
+- Payoffs in training rules are always from player 0's perspective. In limit, player 1 = SB/button (acts first preflop), player 0 = BB.
+- The web preflop_equity.json must stay identical to data/preflop_equity.pkl (export_limit.py re-syncs it).
 
-## Current Status
-- CFR algorithm implemented and working for Kuhn Poker
-- Leduc Poker simulation and training recently completed (modified files: `algorithms/cfr.py`, `training/leduc_poker.py`)
-- NL Hold'em game engine complete but no CFR training for it yet
-- No MCCFR, CFR+, or exploitability calculations implemented yet
+## Testing
+```bash
+python -m pytest tests/ -q          # Python: CFR convergence, exploitability, game rules, NLHE engine
+cd web && npx vitest run            # Web: engines, bots, golden keys, hand eval, smoke
+cd web && npx tsc -b && npx eslint src
+```
 
-## Running Training
+## Training / Export
 ```bash
 source .venv/bin/activate
 python -m src.training.kuhn_poker    # Kuhn Poker CFR
 python -m src.training.leduc_poker   # Leduc Poker CFR
+python export_strategies.py          # exports kuhn/leduc/limit strategy JSONs
+python export_limit.py               # trains + exports MCCFR/MCCFR_plus/DCFR limit models (LIMIT_ITERS env var)
+cd web && npm run build              # rebuilds docs/ (GitHub Pages) from web/, includes public/models
 ```
+
+## Current Status
+- CFR converges on Kuhn (tests assert equilibrium invariants + exploitability < 0.01)
+- Exact per-info-set best-response exploitability implemented for Kuhn/Leduc
+- ES-MCCFR with correct opponent-node strategy averaging; CFR+ clip and DCFR discounting options
+- Heads-up Limit Hold'em trainer uses real blinds (F/C/R preflop) matching the web engine
+- NL Hold'em simulation: correct betting rounds, side pots, all-ins, HU blinds (tested)
+- `src/simulation/leduc_poker.py` and `limit_holdem.py` are intentional NotImplementedError stubs

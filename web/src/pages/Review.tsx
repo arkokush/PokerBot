@@ -80,6 +80,11 @@ export function Review() {
   const PIE_COLORS = ['#8B5CF6', '#22C55E']
 
   const overallWinner = p1Profit > p2Profit ? players[0] : p2Profit > p1Profit ? players[1] : null
+  // Stats attributed to the actual profit winner (they may have won fewer hands)
+  const winnerIsP1 = overallWinner?.id === 0
+  const winnerWins = winnerIsP1 ? p1Wins : p2Wins
+  const loserWins = winnerIsP1 ? p2Wins : p1Wins
+  const winnerProfit = winnerIsP1 ? p1Profit : p2Profit
 
   return (
     <div className="min-h-screen flex flex-col py-8 px-6">
@@ -89,6 +94,7 @@ export function Review() {
           <button
             onClick={() => navigate('/')}
             className="p-2 rounded-lg hover:bg-bg-elevated transition-colors text-text-secondary hover:text-text-primary cursor-pointer"
+            aria-label="Back to lobby"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -108,8 +114,8 @@ export function Review() {
             <div>
               <p className="font-display text-lg font-bold text-text-primary">{overallWinner.name} wins the match</p>
               <p className="text-text-secondary text-sm">
-                {p1Wins > p2Wins ? p1Wins : p2Wins} - {p1Wins > p2Wins ? p2Wins : p1Wins} hands
-                {' \u00B7 '}Profit: {p1Profit > p2Profit ? `+${p1Profit}` : `+${p2Profit}`}
+                {winnerWins} - {loserWins} hands
+                {' \u00B7 '}Profit: {winnerProfit > 0 ? `+${winnerProfit}` : winnerProfit}
               </p>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import type { BotStrategy } from './types'
 import type { PlayerAction } from '../engines/types'
+import { clampToValid } from './legality'
 
 export const alwaysCallBot: BotStrategy = {
   name: 'Always Call',
@@ -8,10 +9,10 @@ export const alwaysCallBot: BotStrategy = {
   decide(state): PlayerAction {
     const { validActions, betToCall } = state
 
-    if (validActions.includes('call')) {
-      return { type: 'call', amount: betToCall }
-    }
+    const desired: PlayerAction = validActions.includes('call')
+      ? { type: 'call', amount: betToCall }
+      : { type: 'check' }
 
-    return { type: 'check' }
+    return clampToValid(state, desired, 'always_call')
   },
 }

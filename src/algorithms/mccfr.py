@@ -6,10 +6,14 @@ from src.training.base import PokerGameRules
 
 class MCCFR:
     """
-    External Sampling MCCFR.
+    External Sampling MCCFR (Lanctot et al. 2009).
 
-    - Traverser: enumerate all actions
-    - Opponent: sample one action according to current strategy
+    - Traverser: enumerate all actions, update regrets at its own info sets
+    - Opponent: sample one action according to the current strategy; the
+      average-strategy sums are accumulated at the OPPONENT's info sets
+      (weight 1 per visit), because under external sampling the opponent's
+      nodes are reached with probability proportional to the opponent's
+      own reach — which is exactly the weighting the average strategy needs.
     """
 
     def __init__(
@@ -20,7 +24,17 @@ class MCCFR:
         gamma: float = float("inf"),
         clip: bool = False,
     ):
-        # Defaults (alpha=beta=gamma=inf, clip=False) recover plain MCCFR.
+        # Discount parameters follow DCFR (Brown & Sandholm 2019):
+        #   alpha — positive regrets are scaled by t^alpha / (t^alpha + 1)
+        #   beta  — negative regrets are scaled by t^beta / (t^beta + 1)
+        #   gamma — average-strategy decay: existing strategy sums are scaled
+        #           by (t/(t+1))^gamma on each visit before adding the current
+        #           strategy with weight 1
+        # float("inf") is a sentinel meaning "no discounting" for that term:
+        #   alpha/beta = inf -> regret discount factor 1.0
+        #   gamma = inf      -> strategy sums accumulate undecayed (weight 1)
+        # So the defaults (alpha=beta=gamma=inf, clip=False) recover plain
+        # external-sampling MCCFR with uniform strategy averaging.
         self.game = game
         self.info_sets: Dict[str, InformationSet] = {}
         self.t = 0
@@ -50,10 +64,25 @@ class MCCFR:
                 return i
         return len(strategy) - 1
 
-    def traverse(self, cards, history, traversing_player):
-        player = self.game.get_acting_player(history)
+    def _regret_discount(self, exponent: float) -> float:
+        """
+        Compute the DCFR regret discount t^e / (t^e + 1) in a numerically
+        stable way. Returns 1.0 for exponent = inf (sentinel: no discount)
+        and when t^e overflows (the ratio tends to 1 as t^e grows).
+        """
+        if exponent == float("inf"):
+            return 1.0
+        if exponent == float("-inf"):
+            return 0.0
+        try:
+            p = float(self.t) ** exponent
+        except OverflowError:
+            return 1.0
+        if p == float("inf"):
+            return 1.0
+        return p / (p + 1.0)
 
-        player_card = cards[player]
+    def traverse(self, cards, history, traversing_player):
         flop = cards[2] if len(cards) > 2 else None
         turn = cards[3] if len(cards) > 3 else None
         river = cards[4] if len(cards) > 4 else None
@@ -69,19 +98,14 @@ class MCCFR:
         if len(actions) == 1 and actions[0] not in ('F', 'P', 'C', 'B', 'R'):
             return self.traverse(cards, history + actions[0], traversing_player)
 
+        player = self.game.get_acting_player(history)
+        player_card = cards[player]
+
         key = self.game.get_info_set_string(player_card, history, board)
         info_set = self.get_info_set(key, len(actions))
         strategy = info_set.get_strategy()
 
         if player == traversing_player:
-            if self.gamma == float("inf"):
-                for i in range(len(actions)):
-                    info_set.strategy_sum[i] += self.t * strategy[i]
-            else:
-                w = (self.t / (self.t + 1)) ** self.gamma
-                for i in range(len(actions)):
-                    info_set.strategy_sum[i] = info_set.strategy_sum[i] * w + strategy[i]
-
             action_utils = [0.0] * len(actions)
             node_util = 0.0
 
@@ -91,15 +115,8 @@ class MCCFR:
                 )
                 node_util += strategy[i] * action_utils[i]
 
-            t = self.t
-            if self.alpha == float("inf"):
-                pos_discount = 1.0
-            else:
-                pos_discount = (t ** self.alpha) / (t ** self.alpha + 1)
-            if self.beta == float("inf"):
-                neg_discount = 1.0
-            else:
-                neg_discount = (t ** self.beta) / (t ** self.beta + 1)
+            pos_discount = self._regret_discount(self.alpha)
+            neg_discount = self._regret_discount(self.beta)
 
             for i in range(len(actions)):
                 new_regret = action_utils[i] - node_util
@@ -113,7 +130,18 @@ class MCCFR:
             return node_util
 
         else:
-            # Opponent: sample one action
+            # Opponent node: accumulate the average strategy HERE (external
+            # sampling reaches this node ∝ the opponent's own reach prob,
+            # so a weight of 1 gives an unbiased average-strategy update),
+            # then sample a single action to continue the traversal.
+            if self.gamma == float("inf"):
+                for i in range(len(actions)):
+                    info_set.strategy_sum[i] += strategy[i]
+            else:
+                w = (self.t / (self.t + 1)) ** self.gamma
+                for i in range(len(actions)):
+                    info_set.strategy_sum[i] = info_set.strategy_sum[i] * w + strategy[i]
+
             sampled_idx = self.sample_action(strategy)
             action = actions[sampled_idx]
             return self.traverse(

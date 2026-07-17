@@ -53,6 +53,7 @@ export function Lobby() {
           onClick={toggleLightMode}
           className="p-2 rounded-lg hover:bg-bg-elevated text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
           title={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
+          aria-label={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
         >
           {lightMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
         </button>
@@ -181,9 +182,9 @@ export function Lobby() {
             disabled={!canStart}
             whileHover={canStart ? { scale: 1.03 } : undefined}
             whileTap={canStart ? { scale: 0.98 } : undefined}
-            className={`px-12 py-4 rounded-xl font-display text-lg font-semibold transition-all cursor-pointer ${
+            className={`px-12 py-4 rounded-xl font-display text-lg font-semibold transition-all ${
               canStart
-                ? 'bg-accent-purple text-white shadow-[0_0_32px_var(--color-accent-purple-glow)] hover:shadow-[0_0_48px_var(--color-accent-purple-glow)]'
+                ? 'bg-accent-purple text-white shadow-[0_0_32px_var(--color-accent-purple-glow)] hover:shadow-[0_0_48px_var(--color-accent-purple-glow)] cursor-pointer'
                 : 'bg-bg-elevated text-text-tertiary opacity-50 cursor-not-allowed'
             }`}
           >

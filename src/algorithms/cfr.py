@@ -21,8 +21,6 @@ class CFR:
 
     def cfr(self, cards: tuple, history: str, reach_p0: float, reach_p1: float) -> float:
         """Returns utility from P0's perspective throughout."""
-        player = self.game.get_acting_player(history)
-        player_card = cards[player]
         flop = cards[2] if len(cards) > 2 else None
         turn = cards[3] if len(cards) > 3 else None
         river = cards[4] if len(cards) > 4 else None
@@ -32,11 +30,20 @@ class CFR:
         if self.game.is_terminal(history):
             return self.game.get_payoff(cards[:2], history, com_cards)
 
+        # Prune: if neither player can reach this node, nothing below can
+        # contribute to any regret or strategy sum (every update is weighted
+        # by one of the reach probabilities).
+        if reach_p0 == 0.0 and reach_p1 == 0.0:
+            return 0.0
+
         actions = self.game.get_legal_actions(history)
 
         # Forced transitions (e.g., round separator) — just recurse, no decision
         if len(actions) == 1 and actions[0] not in ('F', 'P', 'C', 'B', 'R'):
             return self.cfr(cards, history + actions[0], reach_p0, reach_p1)
+
+        player = self.game.get_acting_player(history)
+        player_card = cards[player]
 
         info_set_key = self.game.get_info_set_string(player_card, history, com_cards)
         info_set = self.get_info_set(info_set_key, len(actions))

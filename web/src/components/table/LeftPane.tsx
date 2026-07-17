@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useMemo, useState } from 'react'
 import { User, Bot, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import type { Player, GameState, GameConfig, PlayMode } from '../../engines/types'
 import { probeStrategy, type StrategyProbe } from '../../bots/mccfr'
@@ -38,16 +38,42 @@ function shouldShowProbeFor(
 }
 
 export function LeftPane({ players, handHistory, config, state, mode, pvpActivePlayer = 0 }: Props) {
-  // Cache the most recent valid probe per bot so the thought-process box
-  // stays visible even when it isn't that bot's turn. Reset on each new hand.
-  const probeCacheRef = useRef<{ handNumber: number; probes: Record<number, StrategyProbe> }>({
-    handNumber: -1,
-    probes: {},
-  })
   const handNumber = state?.handNumber ?? -1
-  if (probeCacheRef.current.handNumber !== handNumber) {
-    probeCacheRef.current = { handNumber, probes: {} }
+  const actionCount = state?.actionHistory.length ?? -1
+
+  // The Monte Carlo probe is expensive (rollouts/enumerations per bot), so only
+  // recompute when the game actually advances — not on every store change.
+  const freshProbes = useMemo(() => {
+    const next: Record<number, StrategyProbe> = {}
+    if (state) {
+      for (const player of state.players) {
+        if (!shouldShowProbeFor(player.id, state, mode, pvpActivePlayer)) continue
+        const live = probeStrategy(state, player.id)
+        if (live) next[player.id] = live
+      }
+    }
+    return next
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handNumber, actionCount, mode, pvpActivePlayer, config.variant])
+
+  // Hold each bot's most recent probe for the current hand, so the
+  // thought-process box stays visible even when it isn't that bot's turn.
+  // Reset whenever a new hand starts. This is React's documented
+  // "adjusting state when props change" pattern: the guarded setState
+  // during render re-runs the component before committing, with no effect
+  // round-trip and no ref mutation.
+  const [held, setHeld] = useState<{
+    hand: number
+    fresh: Record<number, StrategyProbe>
+    probes: Record<number, StrategyProbe>
+  }>({ hand: -1, fresh: {}, probes: {} })
+
+  if (held.hand !== handNumber || held.fresh !== freshProbes) {
+    const base = held.hand === handNumber ? held.probes : {}
+    setHeld({ hand: handNumber, fresh: freshProbes, probes: { ...base, ...freshProbes } })
   }
+
+  const probes = held.hand === handNumber ? { ...held.probes, ...freshProbes } : freshProbes
 
   const getWinRate = (playerId: number) => {
     if (handHistory.length === 0) return 0
@@ -125,11 +151,7 @@ export function LeftPane({ players, handHistory, config, state, mode, pvpActiveP
             </div>
 
             {shouldShowProbeFor(player.id, state, mode, pvpActivePlayer) && (() => {
-              const live = probeStrategy(state!, player.id)
-              if (live) {
-                probeCacheRef.current.probes[player.id] = live
-              }
-              const probe = live ?? probeCacheRef.current.probes[player.id]
+              const probe = probes[player.id]
               if (!probe) return null
               const isActing = !state!.isHandOver && state!.currentPlayerIndex === player.id
               return <InfoSetProbe probe={probe} isActing={isActing} />

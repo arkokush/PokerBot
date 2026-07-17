@@ -30,7 +30,7 @@ class Card:
             self.id = value
 
         elif isinstance(value, str):
-            rank = value[0]
+            rank = value[0].upper()
             suit = value[1]
             self.id = rank_map[rank] * 4 + suit_map[suit]
 
@@ -59,7 +59,7 @@ class Card:
         if isinstance(other, int):
             return self.id == other
         if isinstance(other, str):
-            return self.getCardVal() == other
+            return self.getCardVal().lower() == other.lower()
         return False
 
     def __str__(self):
@@ -73,12 +73,15 @@ class Deck:
         if cards is None:
             self.cards = [Card(i) for i in range(52)]
         else:
-            self.cards = cards
+            # Copy so dealing never mutates the caller's list.
+            self.cards = list(cards)
 
     def shuffle(self):
         random.shuffle(self.cards)
 
     def deal(self, n):
+        if n > len(self.cards):
+            raise ValueError(f"Cannot deal {n} cards from a deck of {len(self.cards)}")
         return [self.cards.pop() for _ in range(n)]
 
     def size(self):

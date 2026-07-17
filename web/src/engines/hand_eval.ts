@@ -240,15 +240,27 @@ export function describeHand(cards: Card[]): string {
   if (cards.length >= 5) {
     return describeBestEncoded(encodeCards(cards))
   }
-  // 3-4 cards: fall back to pair/high-card check
-  const counts: Record<string, number> = {}
+  // 3-4 cards: rank-multiplicity check, strongest class first (quads/trips
+  // must be reported before pairs).
+  const counts = new Array<number>(13).fill(0)
   let highIdx = -1
   for (const c of cards) {
-    counts[c.rank] = (counts[c.rank] || 0) + 1
-    if (RANK_INDEX[c.rank] > highIdx) highIdx = RANK_INDEX[c.rank]
+    const idx = RANK_INDEX[c.rank]
+    counts[idx]++
+    if (idx > highIdx) highIdx = idx
   }
-  for (const rank of Object.keys(counts)) {
-    if (counts[rank] >= 2) return `Pair of ${RANK_NAMES_PLURAL[rank as Rank]}`
+  let quadIdx = -1, tripIdx = -1, pair1Idx = -1, pair2Idx = -1
+  for (let r = 12; r >= 0; r--) {
+    if (counts[r] >= 4) quadIdx = r
+    else if (counts[r] === 3) tripIdx = r
+    else if (counts[r] === 2) {
+      if (pair1Idx < 0) pair1Idx = r
+      else pair2Idx = r
+    }
   }
+  if (quadIdx >= 0) return `Four of a Kind, ${rankIdxPlural(quadIdx)}`
+  if (tripIdx >= 0) return `Three of a Kind, ${rankIdxPlural(tripIdx)}`
+  if (pair2Idx >= 0) return `Two Pair, ${rankIdxPlural(pair1Idx)} and ${rankIdxPlural(pair2Idx)}`
+  if (pair1Idx >= 0) return `Pair of ${rankIdxPlural(pair1Idx)}`
   return `${RANK_NAMES[RANK_LABELS[highIdx]]} High`
 }

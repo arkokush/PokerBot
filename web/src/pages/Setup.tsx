@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useUIStore } from '../stores/uiStore'
@@ -49,8 +49,14 @@ export function Setup() {
   const [seed, setSeed] = useState('')
   const [infiniteStack, setInfiniteStack] = useState(false)
 
+  // Redirect to lobby when arriving without a variant/mode selection
+  useEffect(() => {
+    if (!selectedVariant || !selectedMode) {
+      navigate('/')
+    }
+  }, [selectedVariant, selectedMode, navigate])
+
   if (!selectedVariant || !selectedMode) {
-    navigate('/')
     return null
   }
 
@@ -60,14 +66,41 @@ export function Setup() {
   const variantLabel = selectedVariant === 'kuhn' ? 'Kuhn Poker' : selectedVariant === 'leduc' ? 'Leduc Hold\'em' : 'Limit Hold\'em'
   const modeLabel = selectedMode === 'pvp' ? 'Player vs Player' : selectedMode === 'pvb' ? 'Player vs Bot' : 'Bot vs Bot'
 
+  // Kuhn/Leduc engines hardcode antes/bet sizes — blinds are not configurable there
+  const blindsConfigurable = selectedVariant === 'limit_holdem'
+  const effectiveSmallBlind = blindsConfigurable ? smallBlind : defaults.smallBlind
+  const effectiveBigBlind = blindsConfigurable ? bigBlind : defaults.bigBlind
+
+  // Seed: empty is fine (unseeded); anything else must be a whole number
+  const seedTrimmed = seed.trim()
+  const seedIsValid = seedTrimmed === '' || /^-?\d+$/.test(seedTrimmed)
+
+  // Validate numeric options (Number('') coerces to 0, so guard minimums here)
+  const minStack = effectiveBigBlind * 10
+  const blindError = blindsConfigurable
+    ? smallBlind < 1
+      ? 'Small blind must be at least 1'
+      : bigBlind < 1
+        ? 'Big blind must be at least 1'
+        : smallBlind > bigBlind
+          ? 'Small blind cannot exceed big blind'
+          : null
+    : null
+  const stackError = startingStack < minStack
+    ? `Starting stack must be at least ${minStack} (10× big blind)`
+    : null
+  const configError = blindError ?? stackError
+  const canStart = !configError
+
   const handleStart = () => {
+    if (configError) return
     const config: GameConfig = {
       variant: selectedVariant,
       startingStack,
-      smallBlind,
-      bigBlind,
+      smallBlind: effectiveSmallBlind,
+      bigBlind: effectiveBigBlind,
       handLimit,
-      seed: seed ? parseInt(seed, 10) : undefined,
+      seed: seedIsValid && seedTrimmed !== '' ? parseInt(seedTrimmed, 10) : undefined,
       infiniteStack,
     }
 
@@ -90,6 +123,7 @@ export function Setup() {
         onClick={toggleLightMode}
         className="absolute top-4 right-4 z-20 p-2 rounded-lg hover:bg-bg-elevated text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
         title={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
+        aria-label={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
       >
         {lightMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
       </button>
@@ -104,6 +138,7 @@ export function Setup() {
           <button
             onClick={() => navigate('/')}
             className="p-2 rounded-lg hover:bg-bg-elevated transition-colors text-text-secondary hover:text-text-primary cursor-pointer"
+            aria-label="Back to lobby"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -234,23 +269,36 @@ export function Setup() {
               </label>
             </div>
             <div>
-              <label className="text-text-secondary text-sm block mb-2">Blinds</label>
+              <label className="text-text-secondary text-sm block mb-2">
+                Blinds{!blindsConfigurable && <span className="text-text-tertiary"> (fixed)</span>}
+              </label>
               <div className="flex gap-1">
                 <input
                   type="number"
-                  value={smallBlind}
+                  min={1}
+                  value={blindsConfigurable ? smallBlind : defaults.smallBlind}
                   onChange={(e) => setSmallBlind(Number(e.target.value))}
-                  className="w-1/2 bg-bg-overlay border border-border-subtle rounded-lg px-2 py-2 text-text-primary text-sm focus:outline-none focus:border-accent-purple"
+                  disabled={!blindsConfigurable}
+                  aria-label="Small blind"
+                  className={`w-1/2 bg-bg-overlay border border-border-subtle rounded-lg px-2 py-2 text-text-primary text-sm focus:outline-none focus:border-accent-purple ${!blindsConfigurable ? 'opacity-40' : ''}`}
                   placeholder="SB"
                 />
                 <input
                   type="number"
-                  value={bigBlind}
+                  min={1}
+                  value={blindsConfigurable ? bigBlind : defaults.bigBlind}
                   onChange={(e) => setBigBlind(Number(e.target.value))}
-                  className="w-1/2 bg-bg-overlay border border-border-subtle rounded-lg px-2 py-2 text-text-primary text-sm focus:outline-none focus:border-accent-purple"
+                  disabled={!blindsConfigurable}
+                  aria-label="Big blind"
+                  className={`w-1/2 bg-bg-overlay border border-border-subtle rounded-lg px-2 py-2 text-text-primary text-sm focus:outline-none focus:border-accent-purple ${!blindsConfigurable ? 'opacity-40' : ''}`}
                   placeholder="BB"
                 />
               </div>
+              {!blindsConfigurable && (
+                <p className="text-text-tertiary text-xs mt-1">
+                  {variantLabel} uses fixed antes/bet sizes
+                </p>
+              )}
             </div>
             <div>
               <label className="text-text-secondary text-sm block mb-2">Seed</label>
@@ -259,24 +307,37 @@ export function Setup() {
                 value={seed}
                 onChange={(e) => setSeed(e.target.value)}
                 placeholder="Optional"
-                className="w-full bg-bg-overlay border border-border-subtle rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-accent-purple placeholder:text-text-tertiary"
+                className={`w-full bg-bg-overlay border rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none placeholder:text-text-tertiary ${seedIsValid ? 'border-border-subtle focus:border-accent-purple' : 'border-accent-red focus:border-accent-red'}`}
               />
+              {!seedIsValid && (
+                <p className="text-accent-red text-xs mt-1">
+                  Seed must be a whole number — will be ignored
+                </p>
+              )}
             </div>
           </div>
         </motion.div>
 
         {/* Begin Button */}
         <motion.div
-          className="flex justify-center"
+          className="flex flex-col items-center gap-3"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
+          {configError && (
+            <p className="text-accent-red text-sm">{configError}</p>
+          )}
           <motion.button
             onClick={handleStart}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.98 }}
-            className="px-16 py-4 rounded-xl bg-accent-purple text-white font-display text-lg font-semibold shadow-[0_0_32px_var(--color-accent-purple-glow)] hover:shadow-[0_0_48px_var(--color-accent-purple-glow)] transition-shadow cursor-pointer"
+            disabled={!canStart}
+            whileHover={canStart ? { scale: 1.03 } : undefined}
+            whileTap={canStart ? { scale: 0.98 } : undefined}
+            className={`px-16 py-4 rounded-xl font-display text-lg font-semibold transition-shadow ${
+              canStart
+                ? 'bg-accent-purple text-white shadow-[0_0_32px_var(--color-accent-purple-glow)] hover:shadow-[0_0_48px_var(--color-accent-purple-glow)] cursor-pointer'
+                : 'bg-bg-elevated text-text-tertiary opacity-50 cursor-not-allowed'
+            }`}
           >
             Begin
           </motion.button>

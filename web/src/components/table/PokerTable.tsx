@@ -75,6 +75,7 @@ export function PokerTable({ state, lastActions, mode, pvpActivePlayer }: Props)
               position="top"
               lastAction={lastActions[1]}
               handDescription={handDescription(1)}
+              handNumber={state.handNumber}
             />
           )}
         </div>
@@ -144,6 +145,7 @@ export function PokerTable({ state, lastActions, mode, pvpActivePlayer }: Props)
               position="bottom"
               lastAction={lastActions[0]}
               handDescription={handDescription(0)}
+              handNumber={state.handNumber}
             />
           )}
         </div>

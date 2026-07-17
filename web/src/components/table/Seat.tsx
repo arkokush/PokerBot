@@ -14,6 +14,8 @@ interface Props {
   position: 'top' | 'bottom'
   lastAction?: { action: PlayerAction } | null
   handDescription?: string | null
+  /** Included in card keys so deal animations replay when the same card repeats across hands */
+  handNumber?: number
 }
 
 function actionToLabel(a: PlayerAction): { text: string; color: 'purple' | 'green' | 'red' } {
@@ -26,7 +28,7 @@ function actionToLabel(a: PlayerAction): { text: string; color: 'purple' | 'gree
   }
 }
 
-export const Seat = memo(function Seat({ player, isActive, isWinner, showCards, position, lastAction, handDescription }: Props) {
+export const Seat = memo(function Seat({ player, isActive, isWinner, showCards, position, lastAction, handDescription, handNumber = 0 }: Props) {
   const [displayAction, setDisplayAction] = useState<{ text: string; color: 'purple' | 'green' | 'red' } | null>(null)
 
   useEffect(() => {
@@ -61,7 +63,7 @@ export const Seat = memo(function Seat({ player, isActive, isWinner, showCards, 
       <div className="flex gap-1.5">
         {player.holeCards.map((card, i) => (
           <CardComponent
-            key={`${card.rank}${card.suit}-${i}`}
+            key={`${handNumber}-${card.rank}${card.suit}-${i}`}
             card={card}
             faceUp={showCards}
             index={i}

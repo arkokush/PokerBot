@@ -1,15 +1,6 @@
-import type { Card, Rank, Suit, GameConfig, GameEngine, GameState, Player, PlayerAction, Action, Street } from './types'
-import { mulberry32 } from './rng'
+import type { Card, Rank, Suit, GameConfig, GameEngine, GameState, HoldemHandState, Player, PlayerAction, Action, Street } from './types'
+import { mulberry32, shuffle } from './rng'
 import { encodeCards, eval7 } from './hand_eval'
-
-function shuffle<T>(arr: T[], rng: () => number): T[] {
-  const result = [...arr]
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1))
-    ;[result[i], result[j]] = [result[j], result[i]]
-  }
-  return result
-}
 
 const RANKS: Rank[] = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
 const SUITS: Suit[] = ['h', 'd', 'c', 's']
@@ -26,12 +17,6 @@ function buildDeck(): Card[] {
 
 // ---------- Engine state ----------
 
-interface HoldemExtra {
-  deck: Card[]
-  betsThisRound: number
-}
-
-const extraState = new Map<number, HoldemExtra>()
 let globalRng: () => number = Math.random
 
 const STREET_ORDER: Street[] = ['preflop', 'flop', 'turn', 'river']
@@ -86,13 +71,6 @@ export const limitHoldemEngine: GameEngine = {
   dealNewHand(state: GameState): GameState {
     const deck = shuffle(buildDeck(), globalRng)
     const { smallBlind, bigBlind } = state
-    const extra: HoldemExtra = {
-      deck,
-      betsThisRound: 0,
-    }
-
-    const handNumber = state.handNumber + 1
-    extraState.set(handNumber, extra)
 
     // For heads-up: dealer/SB rotates each hand
     const dealerIdx = 1 - state.dealerIndex
@@ -111,8 +89,6 @@ export const limitHoldemEngine: GameEngine = {
       return newP
     })
 
-    extra.betsThisRound = 1 // BB counts as first bet
-
     const newState: GameState = {
       ...state,
       players,
@@ -123,26 +99,41 @@ export const limitHoldemEngine: GameEngine = {
       isHandOver: false,
       winner: null,
       winAmount: 0,
-      handNumber,
+      handNumber: state.handNumber + 1,
       actionHistory: [],
       betToCall: bigBlind - smallBlind,
       currentBetSize: bigBlind,
       dealerIndex: dealerIdx,
       validActions: getActionsForState(bigBlind - smallBlind, 1),
+      handState: {
+        kind: 'holdem',
+        deck,
+        betsThisRound: 1, // BB counts as first bet
+        optionPending: true, // BB may still check/raise the option after an SB limp
+      },
     }
 
     return newState
   },
 
   applyAction(state: GameState, action: PlayerAction): GameState {
-    const extra = extraState.get(state.handNumber)!
+    if (!state.validActions.includes(action.type)) {
+      throw new Error(
+        `limit_holdem.applyAction: illegal action '${action.type}' for player ${state.currentPlayerIndex}` +
+        ` (valid: [${state.validActions.join(', ')}], street: ${state.street}, handOver: ${state.isHandOver})`,
+      )
+    }
+
+    const prevExtra = state.handState as HoldemHandState
     const newState: GameState = {
       ...state,
       players: state.players.map(p => ({ ...p, holeCards: [...p.holeCards] })),
       communityCards: [...state.communityCards],
       actionHistory: [...state.actionHistory, { playerIndex: state.currentPlayerIndex, action, street: state.street }],
+      handState: { ...prevExtra },
     }
 
+    const extra = newState.handState as HoldemHandState
     const currentPlayer = newState.players[newState.currentPlayerIndex]
     const opponent = newState.players[1 - newState.currentPlayerIndex]
 
@@ -158,19 +149,12 @@ export const limitHoldemEngine: GameEngine = {
     }
 
     if (action.type === 'check') {
-      // Check if this completes the round
+      extra.optionPending = false
+      // Preflop: BB checking the option after an SB limp ends the round.
+      // Postflop: the second check ends the round.
       const roundActions = newState.actionHistory.filter(a => a.street === newState.street)
-      // Preflop: BB checks after SB calls (special case)
-      // Postflop: second check ends the round
-      if (newState.street === 'preflop') {
-        // BB checking after SB limped in
-        if (roundActions.length >= 2) {
-          return advanceStreet(newState, extra)
-        }
-      } else {
-        if (roundActions.length >= 2) {
-          return advanceStreet(newState, extra)
-        }
+      if (roundActions.length >= 2) {
+        return advanceStreet(newState, extra)
       }
       newState.currentPlayerIndex = 1 - newState.currentPlayerIndex
       newState.validActions = getActionsForState(0, extra.betsThisRound)
@@ -184,12 +168,11 @@ export const limitHoldemEngine: GameEngine = {
       newState.pot += callAmount
       newState.betToCall = 0
 
-      // Calling ends the betting round (unless it's the preflop SB completing)
-      // After a call, check if we should give BB option
-      if (newState.street === 'preflop' && extra.betsThisRound === 1) {
-        // SB just called (limped), BB gets option to check or raise
+      // The BB option exists only immediately after the SB open-limp: give the
+      // BB one chance to check or raise, then never re-enter this branch.
+      if (newState.street === 'preflop' && extra.optionPending) {
+        extra.optionPending = false
         newState.currentPlayerIndex = 1 - newState.currentPlayerIndex
-        newState.betToCall = 0
         newState.validActions = getActionsForState(0, extra.betsThisRound)
         return newState
       }
@@ -203,7 +186,10 @@ export const limitHoldemEngine: GameEngine = {
       currentPlayer.currentBet += betAmt
       newState.pot += betAmt
       newState.betToCall = betAmt
-      extra.betsThisRound = 1
+      // Preflop a 'bet' is the BB raising their own blind after a limp, so it
+      // stacks on top of the blind; postflop it opens the round.
+      extra.betsThisRound = newState.street === 'preflop' ? extra.betsThisRound + 1 : 1
+      extra.optionPending = false
       newState.currentPlayerIndex = 1 - newState.currentPlayerIndex
       newState.validActions = getActionsForState(betAmt, extra.betsThisRound)
       return newState
@@ -217,6 +203,7 @@ export const limitHoldemEngine: GameEngine = {
       newState.pot += totalCost
       newState.betToCall = raiseSize
       extra.betsThisRound++
+      extra.optionPending = false
       newState.currentPlayerIndex = 1 - newState.currentPlayerIndex
       newState.validActions = getActionsForState(raiseSize, extra.betsThisRound)
       return newState
@@ -226,11 +213,9 @@ export const limitHoldemEngine: GameEngine = {
   },
 
   getValidActions(state: GameState): { actions: Action[]; betSize: number; callAmount: number } {
-    const extra = extraState.get(state.handNumber)
-    const betSize = extra ? betSizeForStreet(state.street, state.bigBlind) : state.currentBetSize
     return {
       actions: state.validActions,
-      betSize,
+      betSize: betSizeForStreet(state.street, state.bigBlind),
       callAmount: state.betToCall,
     }
   },
@@ -249,10 +234,11 @@ function getActionsForState(betToCall: number, betsThisRound: number): Action[] 
   return actions
 }
 
-function advanceStreet(state: GameState, extra: HoldemExtra): GameState {
+function advanceStreet(state: GameState, extra: HoldemHandState): GameState {
   // Reset bets
   state.players.forEach(p => { p.currentBet = 0 })
   extra.betsThisRound = 0
+  extra.optionPending = false
   state.betToCall = 0
 
   const next = nextStreet(state.street)

@@ -24,9 +24,18 @@ def preflop_key(c0: int, c1: int) -> str:
     return f"{rank_reverse_map[high]}{rank_reverse_map[low]}{suited}"
 
 
-@lru_cache(maxsize=100_000)
 def mc_win_prob(hole_cards: tuple, board: tuple, k: int = 1000) -> float:
-    """Estimate heads-up win probability via Monte Carlo rollouts."""
+    """Estimate heads-up win probability via Monte Carlo rollouts.
+
+    Hole cards and board are canonicalized (sorted) so that (c0, c1) and
+    (c1, c0) share a single cache entry — otherwise the same situation could
+    land in different equity buckets depending on deal order.
+    """
+    return _mc_win_prob_cached(tuple(sorted(hole_cards)), tuple(sorted(board)), k)
+
+
+@lru_cache(maxsize=100_000)
+def _mc_win_prob_cached(hole_cards: tuple, board: tuple, k: int = 1000) -> float:
     known = set(hole_cards) | set(board)
     deck = [c for c in range(52) if c not in known]
     remaining = 5 - len(board)
@@ -48,8 +57,13 @@ def mc_win_prob(hole_cards: tuple, board: tuple, k: int = 1000) -> float:
     return wins / k
 
 
-@lru_cache(maxsize=100_000)
 def river_win_prob(hole_cards: tuple, board: tuple) -> float:
+    """Exact heads-up win probability on the river (canonicalized cache key)."""
+    return _river_win_prob_cached(tuple(sorted(hole_cards)), tuple(sorted(board)))
+
+
+@lru_cache(maxsize=100_000)
+def _river_win_prob_cached(hole_cards: tuple, board: tuple) -> float:
     """Exact heads-up win probability on the river by enumerating all opponent holdings."""
     from itertools import combinations
     known = set(hole_cards) | set(board)

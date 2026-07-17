@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { GameState, GameConfig, PlayerAction, PlayMode, Player } from '../engines/types'
 import { getEngine } from '../engines'
 import { getBot } from '../bots'
+import { useUIStore } from './uiStore'
 
 interface HandRecord {
   handNumber: number
@@ -22,7 +23,6 @@ interface GameSession {
   handHistory: HandRecord[]
   isRunning: boolean
   bvbSpeed: number // 0.5, 1, 2, 4, or 0 for instant
-  bvbInterval: ReturnType<typeof setTimeout> | null
   /** Stacks at the start of the current hand, used to compute per-hand net */
   preHandStacks: Record<number, number>
 }
@@ -39,6 +39,7 @@ interface GameStore {
   stepOneAction: () => void
   stepOneHand: () => void
   toggleRunning: () => void
+  stopRunning: () => void
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -51,6 +52,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const preHandStacks: Record<number, number> = {}
     state.players.forEach((p) => { preHandStacks[p.id] = p.stack })
 
+    // Clear any stale PvP pass-device overlay left over from a previous session
+    useUIStore.getState().setPvpWaitingForPass(false)
+
     set({
       session: {
         id,
@@ -60,7 +64,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
         handHistory: [],
         isRunning: false,
         bvbSpeed: 1,
-        bvbInterval: null,
         preHandStacks,
       },
     })
@@ -69,6 +72,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   dealHand: () => {
     const { session } = get()
     if (!session || !session.state) return
+    // Idempotency guard: never deal while a hand is in progress. This makes the
+    // initial deal safe under React StrictMode's double-invoked effects — the
+    // second call sees handNumber > 0 with a live hand and becomes a no-op.
+    if (!session.state.isHandOver && session.state.handNumber > 0) return
     const engine = getEngine(session.config.variant)
 
     // If infinite stack, reset both players' stacks before dealing
@@ -143,10 +150,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   endSession: () => {
-    const { session } = get()
-    if (session?.bvbInterval) {
-      clearInterval(session.bvbInterval)
-    }
+    // Clear any pending PvP pass-device overlay so it can't soft-lock the next session
+    useUIStore.getState().setPvpWaitingForPass(false)
     set({ session: null })
   },
 
@@ -234,5 +239,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { session } = get()
     if (!session) return
     set({ session: { ...session, isRunning: !session.isRunning } })
+  },
+
+  stopRunning: () => {
+    const { session } = get()
+    if (!session || !session.isRunning) return
+    set({ session: { ...session, isRunning: false } })
   },
 }))

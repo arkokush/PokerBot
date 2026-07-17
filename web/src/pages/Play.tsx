@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGameStore } from '../stores/gameStore'
@@ -8,32 +8,38 @@ import { ActionBar } from '../components/table/ActionBar'
 import { BvBController } from '../components/table/BvBController'
 import { LeftPane } from '../components/table/LeftPane'
 import { RightPane } from '../components/table/RightPane'
-import { Volume2, VolumeX, LogOut, Sun, Moon } from 'lucide-react'
+import { LogOut, Sun, Moon } from 'lucide-react'
 import type { PlayerAction } from '../engines/types'
 
 export function Play() {
   const navigate = useNavigate()
-  useParams()
+  const { sessionId } = useParams()
   const session = useGameStore((s) => s.session)
   const { dealHand, playerAction, botAct, stepOneAction, stepOneHand, toggleRunning, setBvbSpeed, endSession } = useGameStore()
   const {
-    soundEnabled, toggleSound, lightMode, toggleLightMode,
+    lightMode, toggleLightMode,
     pvpWaitingForPass, setPvpWaitingForPass, pvpActivePlayer, setPvpActivePlayer,
   } = useUIStore()
-  const bvbTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Track last actions for animation labels
+  // Track last actions for animation labels (one clear-timer per seat)
   const [lastActions, setLastActions] = useState<({ action: PlayerAction } | null)[]>([null, null])
   const prevActionCountRef = useRef(0)
+  const labelTimersRef = useRef<(ReturnType<typeof setTimeout> | null)[]>([null, null])
 
-  // Redirect if no session
+  // Defensively clear any stale PvP pass overlay left over from a quit session
   useEffect(() => {
-    if (!session) {
+    setPvpWaitingForPass(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Redirect if no session or URL doesn't match the live session; deal hand 1 otherwise
+  useEffect(() => {
+    if (!session || session.id !== sessionId) {
       navigate('/')
     } else if (session.state && !session.state.isHandOver && session.state.handNumber === 0) {
       dealHand()
     }
-  }, [session, navigate, dealHand])
+  }, [session, sessionId, navigate, dealHand])
 
   // Track action changes to show labels + trigger PvP pass
   useEffect(() => {
@@ -41,13 +47,23 @@ export function Play() {
     const { actionHistory } = session.state
     if (actionHistory.length > prevActionCountRef.current && actionHistory.length > 0) {
       const latest = actionHistory[actionHistory.length - 1]
+      const seat = latest.playerIndex
       setLastActions((prev) => {
         const next = [...prev] as ({ action: PlayerAction } | null)[]
-        next[latest.playerIndex] = { action: latest.action }
+        next[seat] = { action: latest.action }
         return next
       })
-      setTimeout(() => {
-        setLastActions([null, null])
+      // Reset only this seat's clear-timer so a quick action on the other
+      // seat doesn't wipe both labels early
+      const prevTimer = labelTimersRef.current[seat]
+      if (prevTimer) clearTimeout(prevTimer)
+      labelTimersRef.current[seat] = setTimeout(() => {
+        labelTimersRef.current[seat] = null
+        setLastActions((prev) => {
+          const next = [...prev] as ({ action: PlayerAction } | null)[]
+          next[seat] = null
+          return next
+        })
       }, 1500)
 
       // PvP: after a human acts, show pass-device screen before next player's turn
@@ -60,6 +76,18 @@ export function Play() {
     }
     prevActionCountRef.current = actionHistory.length
   }, [session?.state?.actionHistory.length])
+
+  // Clear pending label timers on unmount
+  useEffect(() => {
+    // The array identity is stable (entries are mutated in place), so capturing
+    // it here is safe for the cleanup closure.
+    const timers = labelTimersRef.current
+    return () => {
+      timers.forEach((t) => {
+        if (t) clearTimeout(t)
+      })
+    }
+  }, [])
 
   // Sync pvpActivePlayer with current player index
   useEffect(() => {
@@ -107,76 +135,86 @@ export function Play() {
 
   // BvB auto-play loop
   useEffect(() => {
-    if (!session || session.mode !== 'bvb') return
+    if (!session || session.mode !== 'bvb' || !session.isRunning) return
 
-    if (session.isRunning && session.bvbSpeed > 0) {
+    // Returns true when the match is over and the run loop should stop.
+    // Only stops between hands (isHandOver) so the final hand always completes,
+    // matching the isMatchOver definition used for the "Match Complete" banner.
+    // Uses stopRunning (not toggleRunning) so concurrent loops (e.g. StrictMode)
+    // can't flip the state back to running.
+    const stopIfMatchOver = (): boolean => {
+      const s = useGameStore.getState().session
+      if (!s || !s.state || !s.isRunning) return true
+      const bankrupt = !s.config.infiniteStack && s.state.players.some((p) => p.stack <= 0)
+      if (s.state.isHandOver && (s.state.handNumber >= s.config.handLimit || bankrupt)) {
+        useGameStore.getState().stopRunning()
+        return true
+      }
+      return false
+    }
+
+    if (session.bvbSpeed > 0) {
       const interval = Math.round(800 / session.bvbSpeed)
-      bvbTimerRef.current = setInterval(() => {
+      const timer = setInterval(() => {
         const s = useGameStore.getState().session
-        if (!s || !s.state) return
-        const bankrupt = !s.config.infiniteStack && s.state.players.some((p) => p.stack <= 0)
-        if (s.state.handNumber >= s.config.handLimit || (bankrupt && s.state.isHandOver)) {
-          toggleRunning()
-          return
-        }
+        if (!s || !s.state || !s.isRunning) return
+        if (stopIfMatchOver()) return
         if (s.state.isHandOver) {
           useGameStore.getState().dealHand()
         } else {
           useGameStore.getState().botAct()
         }
       }, interval)
-      return () => {
-        if (bvbTimerRef.current) clearInterval(bvbTimerRef.current)
+      return () => clearInterval(timer)
+    }
+
+    // Instant (speed 0): batched rAF loop with proper cancellation
+    let cancelled = false
+    let rafId = 0
+    const runBatch = () => {
+      if (cancelled) return
+      const batchSize = 50
+      for (let i = 0; i < batchSize; i++) {
+        // Re-check pause/end every step so Pause takes effect immediately
+        if (cancelled || stopIfMatchOver()) return
+        useGameStore.getState().stepOneHand()
       }
-    } else if (session.isRunning && session.bvbSpeed === 0) {
-      const runBatch = () => {
-        const batchSize = 50
-        for (let i = 0; i < batchSize; i++) {
-          useGameStore.getState().stepOneHand()
-          const s = useGameStore.getState().session
-          if (!s) return
-          const bankrupt = !s.config.infiniteStack && s.state!.players.some((p) => p.stack <= 0)
-          if (s.state!.handNumber >= s.config.handLimit || bankrupt) {
-            toggleRunning()
-            return
-          }
-        }
-        requestAnimationFrame(runBatch)
-      }
-      requestAnimationFrame(runBatch)
+      rafId = requestAnimationFrame(runBatch)
+    }
+    rafId = requestAnimationFrame(runBatch)
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(rafId)
     }
   }, [session?.isRunning, session?.bvbSpeed, session?.mode])
 
   // Keyboard shortcuts
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (!session?.state || session.state.isHandOver) return
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const state = session?.state
+      if (!state || state.isHandOver) return
       if (pvpWaitingForPass) return // block input while passing device
-      const currentPlayer = session.state.players[session.state.currentPlayerIndex]
+      const currentPlayer = state.players[state.currentPlayerIndex]
       if (currentPlayer.isBot) return
 
-      const { validActions } = session.state
+      const { validActions } = state
       switch (e.key.toLowerCase()) {
         case 'f':
           if (validActions.includes('fold')) playerAction({ type: 'fold' })
           break
         case 'c':
           if (validActions.includes('check')) playerAction({ type: 'check' })
-          else if (validActions.includes('call')) playerAction({ type: 'call', amount: session.state.betToCall })
+          else if (validActions.includes('call')) playerAction({ type: 'call', amount: state.betToCall })
           break
         case 'r':
-          if (validActions.includes('bet')) playerAction({ type: 'bet', amount: session.state.currentBetSize })
-          else if (validActions.includes('raise')) playerAction({ type: 'raise', amount: session.state.currentBetSize })
+          if (validActions.includes('bet')) playerAction({ type: 'bet', amount: state.currentBetSize })
+          else if (validActions.includes('raise')) playerAction({ type: 'raise', amount: state.currentBetSize })
           break
       }
-    },
-    [session?.state, playerAction, pvpWaitingForPass],
-  )
-
-  useEffect(() => {
+    }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
+  }, [session, playerAction, pvpWaitingForPass])
 
   const handlePvpReady = () => {
     setPvpWaitingForPass(false)
@@ -185,7 +223,7 @@ export function Play() {
     }
   }
 
-  if (!session?.state) return null
+  if (!session?.state || session.id !== sessionId) return null
 
   const state = session.state
   const variantLabel = session.config.variant === 'kuhn' ? 'Kuhn' : session.config.variant === 'leduc' ? 'Leduc' : 'Limit HE'
@@ -212,14 +250,9 @@ export function Play() {
             onClick={toggleLightMode}
             className="p-2 rounded-lg hover:bg-bg-overlay text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
             title={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
+            aria-label={lightMode ? 'Switch to dark mode' : 'Switch to light mode'}
           >
             {lightMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={toggleSound}
-            className="p-2 rounded-lg hover:bg-bg-overlay text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-          >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
           <button
             onClick={() => {
@@ -227,6 +260,8 @@ export function Play() {
               navigate('/')
             }}
             className="p-2 rounded-lg hover:bg-bg-overlay text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+            title="Quit match"
+            aria-label="Quit match"
           >
             <LogOut className="w-4 h-4" />
           </button>

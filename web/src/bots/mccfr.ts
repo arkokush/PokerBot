@@ -1,11 +1,12 @@
 import type { BotStrategy } from './types'
-import type { GameState, PlayerAction, Action, Card } from '../engines/types'
+import type { GameState, PlayerAction, Action, Card, Street } from '../engines/types'
 import { mcWinProb, riverWinProb } from '../engines/equity'
+import { clampToValid } from './legality'
 
 // Must match src/training/limit_poker.py MC_SAMPLES.
 const MCCFR_ROLLOUTS = 100
 
-// Number of equity buckets used to train the new limit hold'em strategies.
+// Number of equity buckets used to train the limit hold'em strategies.
 const LIMIT_BUCKETS = 20
 
 type StrategyTable = Record<string, { actions: string[]; probs: number[] }>
@@ -26,25 +27,59 @@ const RANK_VALUES: Record<string, number> = {
 
 const RANK_LABELS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
 
-function loadStrategies(): Promise<void> {
-  if (loadPromise) return loadPromise
+async function fetchModel<T>(name: string): Promise<T> {
   const base = import.meta.env.BASE_URL
+  const r = await fetch(`${base}models/${name}`)
+  if (!r.ok) {
+    throw new Error(`mccfr: failed to load models/${name}: HTTP ${r.status} ${r.statusText}`)
+  }
+  return r.json() as Promise<T>
+}
+
+/** Optional models: log and continue so one missing file does not block the rest. */
+async function fetchOptionalModel<T>(name: string): Promise<T | null> {
+  try {
+    return await fetchModel<T>(name)
+  } catch (err) {
+    console.warn(`mccfr: optional model models/${name} unavailable:`, err)
+    return null
+  }
+}
+
+export function loadStrategies(): Promise<void> {
+  if (loadPromise) return loadPromise
   loadPromise = Promise.all([
-    fetch(`${base}models/kuhn_strategy.json`).then((r) => r.json()).then((d) => { kuhnStrategy = d }),
-    fetch(`${base}models/leduc_strategy.json`).then((r) => r.json()).then((d) => { leducStrategy = d }),
-    fetch(`${base}models/MCCFR.json`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) limitMCCFR = d }),
-    fetch(`${base}models/MCCFR_plus.json`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) limitMCCFRPlus = d }),
-    fetch(`${base}models/DCFR.json`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) limitDCFR = d }),
-    fetch(`${base}models/preflop_equity.json`).then((r) => r.json()).then((d) => { preflopEquity = d }),
-  ]).then(() => {})
+    fetchModel<StrategyTable>('kuhn_strategy.json').then((d) => { kuhnStrategy = d }),
+    fetchModel<StrategyTable>('leduc_strategy.json').then((d) => { leducStrategy = d }),
+    fetchOptionalModel<StrategyTable>('MCCFR.json').then((d) => { if (d) limitMCCFR = d }),
+    fetchOptionalModel<StrategyTable>('MCCFR_plus.json').then((d) => { if (d) limitMCCFRPlus = d }),
+    fetchOptionalModel<StrategyTable>('DCFR.json').then((d) => { if (d) limitDCFR = d }),
+    fetchModel<Record<string, number>>('preflop_equity.json').then((d) => { preflopEquity = d }),
+  ]).then(() => undefined).catch((err) => {
+    // Reset so a later call retries instead of caching the rejection forever.
+    loadPromise = null
+    throw err
+  })
   return loadPromise
 }
 
-loadStrategies()
+// Kick off loading at module import so strategies are usually ready before the
+// first bot decision. A failure here is retried from ensureLoading().
+loadStrategies().catch(() => {})
+
+/** Fire-and-forget (re)load; used from decide() paths so a failed load retries. */
+function ensureLoading(): void {
+  loadStrategies().catch(() => {})
+}
 
 // ---- Info set key builders ----
 
-function leducInfoKey(state: GameState): string {
+export function kuhnInfoKey(state: GameState): string {
+  const holeCard = state.players[state.currentPlayerIndex].holeCards[0].rank
+  return `${holeCard}:${buildKuhnActionHistory(state)}`
+}
+
+export function leducInfoKey(state: GameState): string {
   const me = state.players[state.currentPlayerIndex]
   const holeCard = me.holeCards[0].rank
   const history = buildActionHistory(state, 'leduc')
@@ -56,7 +91,7 @@ function leducInfoKey(state: GameState): string {
   return `${holeCard}:${history}`
 }
 
-function limitInfoKey(state: GameState, nBuckets: number): string {
+export function limitInfoKey(state: GameState, nBuckets: number = LIMIT_BUCKETS): string {
   const me = state.players[state.currentPlayerIndex]
   const bucket = computeEquityBucket(me.holeCards, state.communityCards, state.street, nBuckets)
   const history = buildActionHistory(state, 'limit_holdem')
@@ -74,28 +109,73 @@ function actionToLabel(actionType: string): string {
   }
 }
 
+// Limit hold'em trainer grammar (real-blinds heads-up game):
+//   Preflop (SB acts first): fold->F, call->C (including the opening limp),
+//   raise->R, and the BB checking their option->P (limp-check is "CP").
+//   The engine surfaces the BB raising their option as a 'bet' (no bet to
+//   call), but in the trainer grammar that is still a raise -> R.
+//   Postflop (BB acts first): check->P, bet->B, call->C, raise->R, fold->F.
+function limitActionToLabel(actionType: string, street: Street): string {
+  if (street === 'preflop') {
+    switch (actionType) {
+      case 'fold': return 'F'
+      case 'call': return 'C'
+      case 'raise': return 'R'
+      case 'bet': return 'R' // BB raising their own blind after an SB limp
+      case 'check': return 'P' // BB checking the option
+      default: return 'P'
+    }
+  }
+  return actionToLabel(actionType)
+}
+
 function labelToAction(label: string, state: GameState): PlayerAction {
-  const { betToCall, currentBetSize } = state
+  const { betToCall, currentBetSize, validActions } = state
   switch (label) {
-    case 'F': return { type: 'fold' }
-    case 'C': return { type: 'call', amount: betToCall }
-    case 'R': return { type: 'raise', amount: currentBetSize }
-    case 'B': return { type: 'bet', amount: currentBetSize }
-    case 'P': return { type: 'check' }
-    default: return { type: 'check' }
+    case 'F':
+      return { type: 'fold' }
+    case 'C':
+      return validActions.includes('call') ? { type: 'call', amount: betToCall } : { type: 'check' }
+    case 'R':
+    case 'B': {
+      // The trainer's R/B distinction does not always match the engine's
+      // bet/raise distinction (e.g. the BB option preflop); pick the legal one.
+      const aggressive: Action = validActions.includes('raise') ? 'raise' : 'bet'
+      return { type: aggressive, amount: currentBetSize }
+    }
+    case 'P':
+      return validActions.includes('check') ? { type: 'check' } : { type: 'call', amount: betToCall }
+    default:
+      return { type: 'check' }
   }
 }
 
-function buildActionHistory(state: GameState, variant: string): string {
+const STREET_INDEX: Record<Street, number> = { preflop: 0, flop: 1, turn: 2, river: 3 }
+
+// Builds the trainer-format action history, with '//' between streets. The
+// Python trainer appends '//' as soon as a round completes, so keys at the
+// start of a new street end in '//' even before any action on that street
+// (e.g. "J|K:PP//"). We therefore emit a separator for every street boundary
+// crossed up to and including the state's current street.
+export function buildActionHistory(state: GameState, variant: string): string {
   let result = ''
-  let currentStreet = 'preflop'
+  let streetIdx = 0
 
   for (const entry of state.actionHistory) {
-    if (variant !== 'kuhn' && entry.street !== currentStreet) {
+    const entryIdx = STREET_INDEX[entry.street] ?? 0
+    while (streetIdx < entryIdx) {
       result += '//'
-      currentStreet = entry.street
+      streetIdx++
     }
-    result += actionToLabel(entry.action.type)
+    result += variant === 'limit_holdem'
+      ? limitActionToLabel(entry.action.type, entry.street)
+      : actionToLabel(entry.action.type)
+  }
+
+  const currentIdx = STREET_INDEX[state.street] ?? 0
+  while (streetIdx < currentIdx) {
+    result += '//'
+    streetIdx++
   }
 
   return result
@@ -201,7 +281,7 @@ function randomFallback(state: GameState): PlayerAction {
 
 function lookupKuhn(state: GameState): { key: string; entry: { actions: string[]; probs: number[] } } | null {
   if (!kuhnStrategy) return null
-  const key = `${state.players[state.currentPlayerIndex].holeCards[0].rank}:${buildKuhnActionHistory(state)}`
+  const key = kuhnInfoKey(state)
   const entry = kuhnStrategy[key]
   return entry ? { key, entry } : null
 }
@@ -270,18 +350,21 @@ export function probeStrategy(state: GameState, playerIndex: number): StrategyPr
 // ---- Bot factories ----
 
 function decideKuhn(state: GameState): PlayerAction {
+  if (!kuhnStrategy) ensureLoading()
   const hit = lookupKuhn(state)
   if (!hit) return randomFallback(state)
   return kuhnLabelToAction(sampleAction(hit.entry.probs, hit.entry.actions), state)
 }
 
 function decideLeduc(state: GameState): PlayerAction {
+  if (!leducStrategy) ensureLoading()
   const hit = lookupLeduc(state)
   if (!hit) return randomFallback(state)
   return labelToAction(sampleAction(hit.entry.probs, hit.entry.actions), state)
 }
 
 function decideLimit(state: GameState, table: StrategyTable | null): PlayerAction {
+  if (!table) ensureLoading()
   const hit = lookupLimit(state, table, LIMIT_BUCKETS)
   if (!hit) return randomFallback(state)
   return labelToAction(sampleAction(hit.entry.probs, hit.entry.actions), state)
@@ -291,9 +374,9 @@ export const cfrBot: BotStrategy = {
   name: 'CFR',
   description: 'Pre-trained CFR strategy',
   decide(state: GameState): PlayerAction {
-    if (state.variant === 'kuhn') return decideKuhn(state)
-    if (state.variant === 'leduc') return decideLeduc(state)
-    return randomFallback(state)
+    if (state.variant === 'kuhn') return clampToValid(state, decideKuhn(state), 'cfr')
+    if (state.variant === 'leduc') return clampToValid(state, decideLeduc(state), 'cfr')
+    return clampToValid(state, randomFallback(state), 'cfr')
   },
 }
 
@@ -301,7 +384,7 @@ export const mccfrBot: BotStrategy = {
   name: 'MCCFR',
   description: 'Pre-trained Monte Carlo CFR strategy',
   decide(state: GameState): PlayerAction {
-    return decideLimit(state, limitMCCFR)
+    return clampToValid(state, decideLimit(state, limitMCCFR), 'mccfr')
   },
 }
 
@@ -309,7 +392,7 @@ export const mccfrPlusBot: BotStrategy = {
   name: 'MCCFR+',
   description: 'Pre-trained MCCFR+ strategy',
   decide(state: GameState): PlayerAction {
-    return decideLimit(state, limitMCCFRPlus)
+    return clampToValid(state, decideLimit(state, limitMCCFRPlus), 'mccfr_plus')
   },
 }
 
@@ -317,6 +400,6 @@ export const dcfrBot: BotStrategy = {
   name: 'DCFR',
   description: 'Pre-trained Discounted CFR strategy',
   decide(state: GameState): PlayerAction {
-    return decideLimit(state, limitDCFR)
+    return clampToValid(state, decideLimit(state, limitDCFR), 'dcfr')
   },
 }

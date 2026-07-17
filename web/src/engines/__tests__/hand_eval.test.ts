@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Card, Rank, Suit } from '../types'
-import { evalHand } from '../hand_eval'
+import { evalHand, describeHand } from '../hand_eval'
 
 function c(rank: Rank, suit: Suit): Card {
   return { rank, suit }
@@ -85,5 +85,77 @@ describe('hand_eval - 7-card best-of-21', () => {
     const cards = [c('2', 'h'), c('5', 'h'), c('7', 'h'), c('9', 'h'), c('K', 'h'), c('3', 'd'), c('4', 'c')]
     const flushOnly = [c('2', 'h'), c('5', 'h'), c('7', 'h'), c('9', 'h'), c('K', 'h')]
     expect(evalHand(cards)).toBe(evalHand(flushOnly))
+  })
+})
+
+describe('hand_eval - full house tiebreaks', () => {
+  it('trips rank dominates the pair rank', () => {
+    const kingsOverQueens = [c('K', 'h'), c('K', 'd'), c('K', 'c'), c('Q', 'h'), c('Q', 'd')]
+    const queensOverAces = [c('Q', 'h'), c('Q', 'd'), c('Q', 'c'), c('A', 'h'), c('A', 'd')]
+    stronger(kingsOverQueens, queensOverAces)
+  })
+
+  it('same trips: higher pair wins', () => {
+    const acesOverKings = [c('A', 'h'), c('A', 'd'), c('A', 'c'), c('K', 'h'), c('K', 'd')]
+    const acesOverQueens = [c('A', 'h'), c('A', 'd'), c('A', 'c'), c('Q', 'h'), c('Q', 'd')]
+    stronger(acesOverKings, acesOverQueens)
+  })
+})
+
+describe('hand_eval - quads tiebreaks', () => {
+  it('quads rank dominates the kicker', () => {
+    const threesAceKicker = [c('3', 'h'), c('3', 'd'), c('3', 'c'), c('3', 's'), c('A', 'h')]
+    const twosAceKicker = [c('2', 'h'), c('2', 'd'), c('2', 'c'), c('2', 's'), c('A', 'h')]
+    stronger(threesAceKicker, twosAceKicker)
+  })
+
+  it('same quads: higher kicker wins', () => {
+    const acesKingKicker = [c('A', 'h'), c('A', 'd'), c('A', 'c'), c('A', 's'), c('K', 'h')]
+    const acesQueenKicker = [c('A', 'h'), c('A', 'd'), c('A', 'c'), c('A', 's'), c('Q', 'h')]
+    stronger(acesKingKicker, acesQueenKicker)
+  })
+})
+
+describe('hand_eval - steel wheel (5-high straight flush)', () => {
+  const steelWheel = [c('A', 'h'), c('2', 'h'), c('3', 'h'), c('4', 'h'), c('5', 'h')]
+
+  it('beats quad aces', () => {
+    const quadAces = [c('A', 'h'), c('A', 'd'), c('A', 'c'), c('A', 's'), c('K', 'h')]
+    stronger(steelWheel, quadAces)
+  })
+
+  it('loses to a six-high straight flush', () => {
+    const sixHighSF = [c('2', 's'), c('3', 's'), c('4', 's'), c('5', 's'), c('6', 's')]
+    stronger(sixHighSF, steelWheel)
+  })
+
+  it('is described as a five-high straight flush', () => {
+    expect(describeHand(steelWheel)).toBe('Straight Flush, Five high')
+  })
+})
+
+describe('hand_eval - describeHand on 3-4 card boards', () => {
+  it('reports trips (not a pair) on a 3-card board', () => {
+    expect(describeHand([c('Q', 'h'), c('Q', 'd'), c('Q', 'c')])).toBe('Three of a Kind, Queens')
+  })
+
+  it('reports trips (not a pair) on a 4-card board', () => {
+    expect(describeHand([c('7', 'h'), c('7', 'd'), c('7', 'c'), c('2', 's')])).toBe('Three of a Kind, Sevens')
+  })
+
+  it('reports quads on a 4-card board', () => {
+    expect(describeHand([c('9', 'h'), c('9', 'd'), c('9', 'c'), c('9', 's')])).toBe('Four of a Kind, Nines')
+  })
+
+  it('reports two pair on a 4-card board', () => {
+    expect(describeHand([c('Q', 'h'), c('Q', 'd'), c('2', 'c'), c('2', 's')])).toBe('Two Pair, Queens and Twos')
+  })
+
+  it('still reports a plain pair', () => {
+    expect(describeHand([c('Q', 'h'), c('Q', 'd'), c('2', 'c')])).toBe('Pair of Queens')
+  })
+
+  it('still reports high card', () => {
+    expect(describeHand([c('Q', 'h'), c('7', 'd'), c('2', 'c')])).toBe('Queen High')
   })
 })

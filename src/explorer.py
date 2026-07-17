@@ -187,7 +187,7 @@ def explore_leduc(cfr, game):
             if game.is_terminal(history):
                 com_cards = (com_card, None, None)
                 payoff = game.get_payoff(cards, history, com_cards)
-                pot = game._calculate_pot(history)
+                pot = sum(game._calculate_commitments(history))
                 print(f"\n  Terminal: history={history}")
                 if com_card is not None:
                     print(f"  Community: {CARD_NAMES[com_card]}({com_card})")

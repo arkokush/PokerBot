@@ -1,23 +1,5 @@
 import type { Card, GameConfig, GameEngine, GameState, Player, PlayerAction, Action } from './types'
-
-function mulberry32(seed: number): () => number {
-  let s = seed | 0
-  return () => {
-    s = (s + 0x6d2b79f5) | 0
-    let t = Math.imul(s ^ (s >>> 15), 1 | s)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-function shuffle<T>(arr: T[], rng: () => number): T[] {
-  const result = [...arr]
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1))
-    ;[result[i], result[j]] = [result[j], result[i]]
-  }
-  return result
-}
+import { mulberry32, shuffle } from './rng'
 
 const KUHN_DECK: Card[] = [
   { rank: 'J', suit: 's' },
@@ -76,12 +58,15 @@ export const kuhnEngine: GameEngine = {
       stack: p.stack - 1,
     }))
 
+    // The "player 0" role (first to act) alternates between seats each hand.
+    const dealerIdx = 1 - state.dealerIndex
+
     const newState: GameState = {
       ...state,
       players,
       communityCards: [],
       pot: 2, // both antes
-      currentPlayerIndex: 0, // player 0 acts first
+      currentPlayerIndex: dealerIdx, // first actor alternates each hand
       street: 'preflop',
       isHandOver: false,
       winner: null,
@@ -91,13 +76,20 @@ export const kuhnEngine: GameEngine = {
       betToCall: 0,
       currentBetSize: 1,
       validActions: ['check', 'bet'],
-      dealerIndex: 1 - state.dealerIndex,
+      dealerIndex: dealerIdx,
     }
 
     return newState
   },
 
   applyAction(state: GameState, action: PlayerAction): GameState {
+    if (!state.validActions.includes(action.type)) {
+      throw new Error(
+        `kuhn.applyAction: illegal action '${action.type}' for player ${state.currentPlayerIndex}` +
+        ` (valid: [${state.validActions.join(', ')}], handOver: ${state.isHandOver})`,
+      )
+    }
+
     const newState: GameState = {
       ...state,
       players: state.players.map(p => ({ ...p, holeCards: [...p.holeCards] })),

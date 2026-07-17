@@ -1,3 +1,6 @@
+import random
+
+
 class Agent:
     #NLHE player_state = {
     #    "hand": player.hand,
@@ -10,23 +13,43 @@ class Agent:
     #}
 
     def decide(self, state):
-        """Returns {"action": str, "amount": optional int}"""
+        """Returns an action string, e.g. "Fold", "Check", "Call", "Raise 20"."""
         raise NotImplementedError("Subclasses must implement decide()")
 
-class RandomAgent(Agent):
-    def decide(self, state):
-        import random
 
-        if state["call_amnt"] == 0:
+class RandomAgent(Agent):
+    """
+    Picks uniformly among LEGAL actions with LEGAL sizes:
+      * facing no bet: Check, or a bet ("Raise") if chips remain;
+      * facing a bet: Fold, Call (all-in for less when stack < call amount),
+        or a raise when chips remain beyond the call;
+      * raise sizes are drawn from [min_raise, stack - call_amnt]; when the
+        stack cannot cover a full min-raise the only raise offered is the
+        all-in short raise.
+    """
+
+    def decide(self, state):
+        stack = state["player_stack"]
+        call_amnt = state["call_amnt"]
+        min_raise = state["min_raise"]
+
+        if stack <= 0:
+            # No chips: can only check (should not be asked to act otherwise).
             return "Check"
 
-        legal_actions = ["Fold"]
+        if call_amnt == 0:
+            legal_actions = ["Check"]
+        else:
+            # Calling is always legal: with stack < call_amnt it is an
+            # all-in for less, which the game engine supports.
+            legal_actions = ["Fold", "Call"]
 
-        if state["call_amnt"] <= state["player_stack"]:
-            legal_actions.append("Call")
-
-        if state["min_raise"] < state["player_stack"]:
-            raise_amount = random.randint(state["min_raise"], state["player_stack"] - state["min_raise"])
+        max_raise = stack - call_amnt
+        if max_raise > 0:
+            if max_raise >= min_raise:
+                raise_amount = random.randint(min_raise, max_raise)
+            else:
+                raise_amount = max_raise  # all-in short raise
             legal_actions.append(f"Raise {raise_amount}")
 
         return random.choice(legal_actions)

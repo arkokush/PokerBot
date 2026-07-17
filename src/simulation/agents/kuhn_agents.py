@@ -1,3 +1,5 @@
+import random
+
 from src.utils.player import Agent
 
 
@@ -18,8 +20,6 @@ class KuhnRandomAgent(KuhnAgent):
     """
 
     def decide(self, state):
-        import random
-
         # Kuhn Poker state provided by KuhnPokerGame:
         # (player_id, hand, stack, pot[, opponent_action])
         # - player_id: 1 or 2

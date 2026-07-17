@@ -6,13 +6,37 @@ from phevaluator.evaluator import evaluate_cards
 
 class LimitPokerRules(PokerGameRules):
     """
-    Limit Poker Rules:
-    Deck: 52 Cards, //4 = Val, %4 = Suit
-    F = Fold, P = Pass/Check, C = Call, B = Bet, R = Raise
+    Heads-up Limit Texas Hold'em.
+
+    Deck: 52 cards, card_id // 4 = rank, card_id % 4 = suit.
+    Player 1 is the button/small blind (posts 1, acts FIRST preflop).
+    Player 0 is the big blind (posts 2, acts first on every later street).
+    Bet size is 2 preflop and on the flop, 4 on the turn and river; each
+    round is capped at 4 total bets (preflop: the blind + 3 raises).
+
+    KEY GRAMMAR (this is the contract mirrored by the web bot's key builder
+    in web/src/bots/mccfr.ts — keep the two in sync):
+
+      Info-set key:  "b{bucket}:{history}"  with NUM_BUCKETS equity buckets
+      (preflop bucket from the precomputed 169-hand equity table, flop/turn
+      from Monte Carlo rollouts, river exact).
+
+      Preflop (SB acts first, facing the blind as a live bet):
+        F = fold, C = call (including the opening limp), R = raise,
+        P = the big blind CHECKING their option after a limp
+        -> a limp-check round is exactly "CP"; a closing call ends the
+           round (e.g. "RC"); the opening limp "C" does NOT end it.
+      Postflop (BB acts first):
+        P = check, B = bet, C = call, R = raise, F = fold
+        -> rounds end on "PP", or a call closing the action, or a fold.
+      "//" is appended whenever a round completes and play continues, so
+      start-of-street info sets end in "//" (e.g. "b7:CP//").
+      Example histories: "", "C", "CP//", "CR", "R", "RC//", "CRR",
+      "CP//PB", "CP//PBC//".
     """
 
-    NUM_BUCKETS = 8
-    MC_SAMPLES = 100  # rollouts per node for flop/turn equity estimation
+    NUM_BUCKETS = 20  # must match LIMIT_BUCKETS in web/src/bots/mccfr.ts
+    MC_SAMPLES = 200  # rollouts per node for flop/turn equity estimation
 
     def __init__(self):
         self._preflop_equity = load_preflop_equity()
@@ -76,21 +100,25 @@ class LimitPokerRules(PokerGameRules):
             return 0
 
     def _calculate_commitments(self, history: str) -> list:
+        """Total chips committed by [player0 (BB), player1 (SB)]."""
         rounds = history.split("//") if "//" in history else [history]
-        commitments = [1, 1]  # antes + BB represented as forced bet
+        commitments = [0, 0]
 
         for round_idx, round_history in enumerate(rounds):
             bet_size = 2 if round_idx <= 1 else 4
-            commit = [0, 0]
-            current_bet = 0
 
             if round_idx == 0:
-                commit[0] = 1
-                current_bet = 1
+                # Blinds: player 0 (BB) has 2 in, player 1 (SB) has 1 in;
+                # the big blind is the live bet to match.
+                commit = [2, 1]
+                current_bet = 2
+            else:
+                commit = [0, 0]
+                current_bet = 0
 
             for action_idx, action in enumerate(round_history):
                 if round_idx == 0:
-                    player = (action_idx + 1) % 2  # player 1 acts first preflop
+                    player = (action_idx + 1) % 2  # player 1 (SB) acts first preflop
                 else:
                     player = action_idx % 2
 
@@ -102,6 +130,7 @@ class LimitPokerRules(PokerGameRules):
                     commit[player] = current_bet
                 elif action == 'C':
                     commit[player] = current_bet
+                # 'P' (check) and 'F' (fold) add nothing.
 
             commitments[0] += commit[0]
             commitments[1] += commit[1]
@@ -140,19 +169,30 @@ class LimitPokerRules(PokerGameRules):
         if len(rounds) < 4 and self._is_round_complete(current_round, is_preflop=is_preflop):
             return ["//"]
 
+        prev = current_round[-1] if current_round else ""
+        raise_count = current_round.count('R')
+
+        if is_preflop:
+            # SB faces the big blind as a live bet: fold, call (limp) or
+            # raise. After a limp the BB may check their option (ending the
+            # round as "CP") or raise. The blind counts as the first bet, so
+            # the cap allows 3 raises.
+            if current_round == "":
+                return ['F', 'C', 'R']
+            if current_round == "C":
+                return ['P', 'R']
+            if prev == 'R':
+                if raise_count >= 3:
+                    return ['F', 'C']
+                return ['F', 'C', 'R']
+            return []
+
         if current_round == "":
             return ['P', 'B']
 
-        prev = current_round[-1]
-        raise_count = current_round.count('R')
-
         if prev == 'P':
             return ['P', 'B']
-        elif prev == 'B':
-            if raise_count >= 3:
-                return ['F', 'C']
-            return ['F', 'C', 'R']
-        elif prev == 'R':
+        elif prev == 'B' or prev == 'R':
             if raise_count >= 3:
                 return ['F', 'C']
             return ['F', 'C', 'R']

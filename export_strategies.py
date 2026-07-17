@@ -32,7 +32,7 @@ leduc_game = LeducPokerRules()
 leduc_export = {}
 for key, probs in strategy.items():
     # Reconstruct which actions this info set had
-    history = key.split(":")[1]
+    history = key.split(":", 1)[1]
     actions = leduc_game.get_legal_actions(history)
     # Filter to only real action nodes (not forced transitions)
     if len(actions) == 1 and actions[0] == "//":
@@ -50,7 +50,7 @@ strategy = limit.get_strategy()
 limit_game = LimitPokerRules()
 limit_export = {}
 for key, probs in strategy.items():
-    history = key.split(":")[1]
+    history = key.split(":", 1)[1]
     actions = limit_game.get_legal_actions(history)
     if len(actions) == 1 and actions[0] == "//":
         continue

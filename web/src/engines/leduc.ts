@@ -1,23 +1,5 @@
-import type { Card, GameConfig, GameEngine, GameState, Player, PlayerAction, Action } from './types'
-
-function mulberry32(seed: number): () => number {
-  let s = seed | 0
-  return () => {
-    s = (s + 0x6d2b79f5) | 0
-    let t = Math.imul(s ^ (s >>> 15), 1 | s)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-function shuffle<T>(arr: T[], rng: () => number): T[] {
-  const result = [...arr]
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1))
-    ;[result[i], result[j]] = [result[j], result[i]]
-  }
-  return result
-}
+import type { Card, GameConfig, GameEngine, GameState, LeducHandState, Player, PlayerAction, Action } from './types'
+import { mulberry32, shuffle } from './rng'
 
 const LEDUC_DECK: Card[] = [
   { rank: 'J', suit: 'h' },
@@ -30,13 +12,9 @@ const LEDUC_DECK: Card[] = [
 
 const RANK_VALUE: Record<string, number> = { J: 0, Q: 1, K: 2 }
 
-// Track raises per round internally
-interface LeducExtra {
-  raisesThisRound: number
-  deck: Card[]
-}
-
-const extraState = new Map<number, LeducExtra>()
+// Maximum bets per round: one bet plus two raises, matching the Python
+// trainer / leduc_strategy.json (info sets like "...PBRR" exist in the model).
+const MAX_BETS_PER_ROUND = 3
 
 let globalRng: () => number = Math.random
 
@@ -87,43 +65,53 @@ export const leducEngine: GameEngine = {
       stack: p.stack - 1,
     }))
 
-    const handNumber = state.handNumber + 1
-
-    extraState.set(handNumber, {
-      raisesThisRound: 0,
-      deck, // community card will be deck[2]
-    })
+    // The "player 0" role (first to act in both rounds) alternates between seats.
+    const dealerIdx = 1 - state.dealerIndex
 
     const newState: GameState = {
       ...state,
       players,
       communityCards: [],
       pot: 2,
-      currentPlayerIndex: 0,
+      currentPlayerIndex: dealerIdx, // first actor alternates each hand
       street: 'preflop', // round 1 (before community card)
       isHandOver: false,
       winner: null,
       winAmount: 0,
-      handNumber,
+      handNumber: state.handNumber + 1,
       actionHistory: [],
       betToCall: 0,
       currentBetSize: 2,
       validActions: ['check', 'bet'],
-      dealerIndex: 1 - state.dealerIndex,
+      dealerIndex: dealerIdx,
+      handState: {
+        kind: 'leduc',
+        deck, // community card will be deck[2]
+        raisesThisRound: 0,
+      },
     }
 
     return newState
   },
 
   applyAction(state: GameState, action: PlayerAction): GameState {
+    if (!state.validActions.includes(action.type)) {
+      throw new Error(
+        `leduc.applyAction: illegal action '${action.type}' for player ${state.currentPlayerIndex}` +
+        ` (valid: [${state.validActions.join(', ')}], street: ${state.street}, handOver: ${state.isHandOver})`,
+      )
+    }
+
+    const prevExtra = state.handState as LeducHandState
     const newState: GameState = {
       ...state,
       players: state.players.map(p => ({ ...p, holeCards: [...p.holeCards] })),
       communityCards: [...state.communityCards],
       actionHistory: [...state.actionHistory, { playerIndex: state.currentPlayerIndex, action, street: state.street }],
+      handState: { ...prevExtra },
     }
 
-    const extra = extraState.get(newState.handNumber)!
+    const extra = newState.handState as LeducHandState
     const currentPlayer = newState.players[newState.currentPlayerIndex]
     const opponent = newState.players[1 - newState.currentPlayerIndex]
 
@@ -159,9 +147,9 @@ export const leducEngine: GameEngine = {
       extra.raisesThisRound = 1
       newState.currentPlayerIndex = 1 - newState.currentPlayerIndex
 
-      // After a bet, opponent can fold, call, or raise (if raises < 2)
+      // After a bet, opponent can fold, call, or raise (bet + up to 2 raises per round)
       const actions: Action[] = ['fold', 'call']
-      if (extra.raisesThisRound < 2) {
+      if (extra.raisesThisRound < MAX_BETS_PER_ROUND) {
         actions.push('raise')
       }
       newState.validActions = actions
@@ -180,7 +168,7 @@ export const leducEngine: GameEngine = {
       newState.currentPlayerIndex = 1 - newState.currentPlayerIndex
 
       const actions: Action[] = ['fold', 'call']
-      if (extra.raisesThisRound < 2) {
+      if (extra.raisesThisRound < MAX_BETS_PER_ROUND) {
         actions.push('raise')
       }
       newState.validActions = actions
@@ -208,7 +196,7 @@ export const leducEngine: GameEngine = {
   },
 }
 
-function advanceStreet(state: GameState, extra: LeducExtra): GameState {
+function advanceStreet(state: GameState, extra: LeducHandState): GameState {
   // Reset current bets
   state.players.forEach(p => { p.currentBet = 0 })
   extra.raisesThisRound = 0
@@ -218,7 +206,7 @@ function advanceStreet(state: GameState, extra: LeducExtra): GameState {
     state.communityCards = [extra.deck[2]]
     state.street = 'flop' // round 2
     state.currentBetSize = 4
-    state.currentPlayerIndex = 0
+    state.currentPlayerIndex = state.dealerIndex // same first actor in both rounds
     state.betToCall = 0
     state.validActions = ['check', 'bet']
     return state
@@ -241,23 +229,34 @@ function resolveShowdown(state: GameState): GameState {
   state.isHandOver = true
   state.validActions = []
 
-  let winnerIdx: number
+  let winnerIdx: number | null
   if (p0Pair && !p1Pair) {
     winnerIdx = 0
   } else if (p1Pair && !p0Pair) {
     winnerIdx = 1
-  } else if (p0Pair && p1Pair) {
-    // Both pair (same rank since only 1 community card) - shouldn't happen with 6-card deck
-    // but handle: higher pair wins
-    winnerIdx = v0 > v1 ? 0 : 1
+  } else if (v0 > v1) {
+    winnerIdx = 0
+  } else if (v1 > v0) {
+    winnerIdx = 1
   } else {
-    // No pairs, higher card wins
-    winnerIdx = v0 > v1 ? 0 : 1
+    winnerIdx = null // equal ranks: split pot
   }
 
-  state.winner = state.players[winnerIdx].id
-  state.winAmount = state.pot
-  state.players[winnerIdx].stack += state.pot
+  if (winnerIdx === null) {
+    // Split pot. Contributions are symmetric at showdown so the pot is even,
+    // but route any odd chip deterministically to the first-to-act seat.
+    const half = Math.floor(state.pot / 2)
+    const odd = state.pot - 2 * half
+    p0.stack += half
+    p1.stack += half
+    state.players[state.dealerIndex].stack += odd
+    state.winner = null
+    state.winAmount = state.pot
+  } else {
+    state.winner = state.players[winnerIdx].id
+    state.winAmount = state.pot
+    state.players[winnerIdx].stack += state.pot
+  }
   state.pot = 0
   return state
 }
