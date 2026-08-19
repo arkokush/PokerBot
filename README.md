@@ -6,7 +6,6 @@
 
 Research-grade poker AI project with a Python CFR/MCCFR training core and a React web UI for playing, reviewing, and visualizing strategies. Built to highlight algorithmic rigor (CFR, exploitability), software engineering structure, and reproducibility.
 
-<!-- TODO: Add a nice screenshot of your Web UI here: -->
 <!-- <img src="docs/assets/ui-screenshot.png" width="600" alt="PokerBot Web Interface"> -->
 
 ## Highlights
@@ -89,8 +88,7 @@ npm run dev
 - **Web UI** for playing and reviewing hands, plus bot-vs-bot mode (`web/src/`).
 
 ## Key Results & Metrics
-*(Add your specific convergence metrics here to impress Quant/ML reviewers)*
-- **Kuhn Poker**: Converges to exact Nash Equilibrium (Exploitability < 0.0001) in ~100k iterations.
+=- **Kuhn Poker**: Converges to exact Nash Equilibrium (Exploitability < 0.0001) in ~100k iterations.
 - **Leduc Poker**: Reaches ~0.05 exploitability in ~200k iterations using vanilla CFR.
 - **Performance**: Game tree traversal optimized to process `N` nodes per second.
 
