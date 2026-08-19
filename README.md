@@ -4,7 +4,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-Vite-61DAFB.svg)](https://reactjs.org/)
 
-Research-grade poker AI project with a Python CFR/MCCFR training core and a React web UI for playing, reviewing, and visualizing strategies. Built to highlight algorithmic rigor (CFR, exploitability), software engineering structure, and reproducibility.
+A poker AI project: a Python CFR/MCCFR training core that computes approximate Nash
+equilibrium strategies for several poker variants, and a React web UI for playing against
+the trained bots, reviewing hands, and visualizing strategies.
 
 <!-- <img src="docs/assets/ui-screenshot.png" width="600" alt="PokerBot Web Interface"> -->
 
@@ -13,7 +15,7 @@ Research-grade poker AI project with a Python CFR/MCCFR training core and a Reac
 - **Algorithmic core**: CFR and MCCFR implementations with `InformationSet` tracking in `src/algorithms/`.
 - **Evaluation tooling**: Exact exploitability calculation for Kuhn/Leduc in `src/algorithms/exploitability.py`.
 - **Multiple variants**: Kuhn, Leduc, Limit Hold'em, and NL Hold'em simulations in `src/simulation/`.
-- **Training entry points**: `src/training/` contains clean rule abstractions and runners.
+- **Training entry points**: `src/training/` contains rule abstractions and runners.
 - **Web UI**: React + Vite app in `web/` for head-to-head play, hand history review, and bot vs bot mode.
 - **Strategy export pipeline**: `export_strategies.py` and `export_limit.py` generate JSON models for the UI.
 
@@ -41,7 +43,8 @@ PokerBot/
 
 ## Quick Start (Python)
 
-Python 3.12 is the current development target. The only required dependency is `phevaluator` for hand evaluation.
+Python 3.12 is the current development target. The only required dependency is
+`phevaluator` for hand evaluation.
 
 ```bash
 python -m venv .venv
@@ -78,7 +81,7 @@ npm install
 npm run dev
 ```
 
-## What’s Implemented
+## What's Implemented
 
 - **CFR (Counterfactual Regret Minimization)** with information sets (`src/algorithms/cfr.py`, `src/algorithms/info_set.py`).
 - **MCCFR (External Sampling)** for larger games (`src/algorithms/mccfr.py`).
@@ -87,10 +90,13 @@ npm run dev
 - **Simulation engines** for Kuhn, Leduc, Limit Hold'em, and NL Hold'em (`src/simulation/`).
 - **Web UI** for playing and reviewing hands, plus bot-vs-bot mode (`web/src/`).
 
-## Key Results & Metrics
-=- **Kuhn Poker**: Converges to exact Nash Equilibrium (Exploitability < 0.0001) in ~100k iterations.
-- **Leduc Poker**: Reaches ~0.05 exploitability in ~200k iterations using vanilla CFR.
-- **Performance**: Game tree traversal optimized to process `N` nodes per second.
+## Results
+
+- **Kuhn Poker**: converges to exact Nash equilibrium (exploitability < 0.0001) in ~100k iterations.
+- **Leduc Poker**: reaches ~0.05 exploitability in ~200k iterations using vanilla CFR.
+
+Exploitability is measured by computing an exact best response against the learned strategy,
+so these numbers report distance from equilibrium rather than training-loss behavior.
 
 ## Data and Models
 
@@ -102,13 +108,9 @@ npm run dev
 - `tests/test_cfr_kuhn.py` and `tests/test_cfr_leduc.py` are runnable benchmark scripts (no pytest harness configured).
 - `tests/*.ipynb` notebooks explore convergence and MCCFR behavior.
 
-## Technical Focus (Resume-Oriented)
+## Tech Stack
 
-- **Game theory**: CFR/MCCFR, exploitability, best-response evaluation.
-- **Systems design**: Clean separation of rules, training, simulation, and UI layers.
-- **Reproducibility**: Strategy export pipeline + deterministic seeds in game configs.
-- **Full-stack delivery**: Python training core + TypeScript/React visualization layer.
-- **Tech Stack**: Python, React, TypeScript, Vite, Zustand, TailwindCSS.
+Python, React, TypeScript, Vite, Zustand, TailwindCSS.
 
 ## License
 
